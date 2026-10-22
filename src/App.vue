@@ -172,12 +172,6 @@ function recuperarContrasena() {
         <div class="panel-formulario">
           <div class="contenido-formulario">
             <header class="encabezado">
-              <div class="logo">
-                <img
-                  src="https://lh3.googleusercontent.com/aida/AEtjO1UsAF413TDAIkrSO9ze6OWy7btgEYHmsbMHJNZ9WZEJ28BbhlOJQ8kws-OUIUypfijXr88YMarmB8dZKRk4ZomPL-QTIavu2eTfld7aLG9fOyBUu9BesgUA0pGX6dPH8l4qgPIXyYuQxtnyO7n_Gye2sCTIPmhA4EBLgXUrjSVn3LYaalMz2uSthFTl_jao0UO7ivERig_lJmuy7HztuqVqasr7mXXRoCzPv1eGlCfw9kmFjd0sevvpDLhh"
-                  alt="Logo MediCitas"
-                />
-              </div>
 
               <h1>Bienvenido a MediCitas</h1>
               <p>Gestiona tus citas médicas de forma sencilla y segura.</p>
@@ -509,7 +503,7 @@ function recuperarContrasena() {
 
     <p v-else>No hay médicos registrados actualmente.</p>
   </section>
-  ```html
+  
 <section v-if="vistaActual === 'citas'" class="seccion-medicos">
   <header class="encabezado-medicos">
     <button
