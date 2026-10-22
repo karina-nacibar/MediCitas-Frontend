@@ -573,10 +573,8 @@ function recuperarContrasena() {
     <p v-else>No hay citas registradas.</p>
   </div>
 </section>
-<section
-  v-if="vistaActual === 'perfil'"
-  class="seccion-medicos"
->
+
+<section v-if="vistaActual === 'perfil'" class="seccion-medicos">
   <header class="encabezado-medicos">
     <button
       type="button"
@@ -591,7 +589,7 @@ function recuperarContrasena() {
     <p>Consulta la información de tu cuenta en MediCitas.</p>
   </header>
 
-  <div class="tarjeta-medico perfil-usuario">
+  <article class="tarjeta-medico">
     <div class="icono-medico">
       <span class="material-symbols-outlined">person</span>
     </div>
@@ -615,8 +613,9 @@ function recuperarContrasena() {
     >
       Cerrar sesión
     </button>
-  </div>
+  </article>
 </section>
+
     </main>
   </template>
 
