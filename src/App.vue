@@ -396,12 +396,8 @@ function recuperarContrasena() {
       <section v-else-if="vistaActual === 'inicio'" class="inicio-medicitas">
     <header class="barra-inicio">
       <div class="marca-inicio">
-        <img
-          src="https://lh3.googleusercontent.com/aida/AEtjO1UsAF413TDAIkrSO9ze6OWy7btgEYHmsbMHJNZ9WZEJ28BbhlOJQ8kws-OUIUypfijXr88YMarmB8dZKRk4ZomPL-QTIavu2eTfld7aLG9fOyBUu9BesgUA0pGX6dPH8l4qgPIXyYuQxtnyO7n_Gye2sCTIPmhA4EBLgXUrjSVn3LYaalMz2uSthFTl_jao0UO7ivERig_lJmuy7HztuqVqasr7mXXRoCzPv1eGlCfw9kmFjd0sevvpDLhh"
-          alt="Logo MediCitas"
-        />
-        <span>MediCitas</span>
-      </div>
+  <span>MediCitas</span>
+</div>
 
       <div class="usuario-inicio">
         <span class="material-symbols-outlined">account_circle</span>
@@ -503,7 +499,7 @@ function recuperarContrasena() {
 
     <p v-else>No hay médicos registrados actualmente.</p>
   </section>
-  
+
 <section v-if="vistaActual === 'citas'" class="seccion-medicos">
   <header class="encabezado-medicos">
     <button
@@ -577,7 +573,50 @@ function recuperarContrasena() {
     <p v-else>No hay citas registradas.</p>
   </div>
 </section>
-```
+<section
+  v-if="vistaActual === 'perfil'"
+  class="seccion-medicos"
+>
+  <header class="encabezado-medicos">
+    <button
+      type="button"
+      class="boton-volver"
+      @click="vistaActual = 'inicio'"
+    >
+      ← Volver al inicio
+    </button>
+
+    <p class="etiqueta-inicio">MI CUENTA</p>
+    <h1>Mi perfil</h1>
+    <p>Consulta la información de tu cuenta en MediCitas.</p>
+  </header>
+
+  <div class="tarjeta-medico perfil-usuario">
+    <div class="icono-medico">
+      <span class="material-symbols-outlined">person</span>
+    </div>
+
+    <h2>Datos personales</h2>
+
+    <p>
+      <strong>Nombre:</strong>
+      {{ usuarioActual?.nombre || 'No disponible' }}
+    </p>
+
+    <p>
+      <strong>Correo electrónico:</strong>
+      {{ usuarioActual?.correo || 'No disponible' }}
+    </p>
+
+    <button
+      type="button"
+      class="boton-volver"
+      @click="cerrarSesion"
+    >
+      Cerrar sesión
+    </button>
+  </div>
+</section>
     </main>
   </template>
 
