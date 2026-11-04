@@ -8,17 +8,13 @@ const api = axios.create({
   }
 });
 
-// ========================================
-// ENVIAR AUTOMÁTICAMENTE EL TOKEN JWT
-// ========================================
 api.interceptors.request.use(
   (config) => {
-    // Buscar el token en el almacenamiento
+
     const token =
       localStorage.getItem('token') ||
       sessionStorage.getItem('token');
 
-    // Enviar el token al backend
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

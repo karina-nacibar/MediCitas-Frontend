@@ -2,18 +2,10 @@
 import { ref } from 'vue'
 import api from './services/api'
 
-// ==========================================
-// DATOS DEL FORMULARIO DE INICIO DE SESIÓN
-// ==========================================
-
 const correo = ref('')
 const contrasena = ref('')
 const mostrarContrasena = ref(false)
 const recordar = ref(true)
-
-// ==========================================
-// DATOS DEL FORMULARIO DE REGISTRO
-// ==========================================
 
 const registro = ref({
   nombres: '',
@@ -30,35 +22,284 @@ const registro = ref({
 const registroCargando = ref(false)
 const mostrarContrasenaRegistro = ref(false)
 
-// ==========================================
-// ESTADO GENERAL DE LA APLICACIÓN
-// ==========================================
-
 const mensaje = ref('')
 const tipoMensaje = ref('error')
 const cargando = ref(false)
 const vistaActual = ref('login')
 const usuarioActual = ref(null)
 
-// ==========================================
-// ESTADO DE LA SECCIÓN DE MÉDICOS
-// ==========================================
-
 const medicos = ref([])
 const cargandoMedicos = ref(false)
 const errorMedicos = ref('')
 
-// ==========================================
-// ESTADO DE LA SECCIÓN DE CITAS
-// ==========================================
+const procesandoEstadoMedico = ref(null)
+
+async function cambiarEstadoMedico(medico) {
+  const estaActivo = medico.estado === 'activo'
+
+  const nuevoEstado = estaActivo ? 'inactivo' : 'activo'
+
+  const accion = estaActivo ? 'desactivar' : 'activar'
+
+  const confirmar = window.confirm(
+    `¿Estás segura de que deseas ${accion} al médico ${medico.nombres} ${medico.apellidos}?`
+  )
+
+  if (!confirmar) return
+
+  procesandoEstadoMedico.value = medico.id_medico
+
+  try {
+    const respuesta = await api.patch(
+      `/medicos/${medico.id_medico}/estado`,
+      { estado: nuevoEstado }
+    )
+
+    medico.estado = respuesta.data.medico?.estado || nuevoEstado
+
+    mensajeMedicoAdmin.value =
+      `El médico se ha ${accion === 'desactivar' ? 'desactivado' : 'activado'} correctamente.`
+
+    errorMedicoAdmin.value = ''
+
+  } catch (error) {
+    errorMedicoAdmin.value =
+      error.response?.data?.mensaje ||
+      `No fue posible ${accion} al médico. Inténtalo nuevamente.`
+
+    mensajeMedicoAdmin.value = ''
+
+  } finally {
+    procesandoEstadoMedico.value = null
+  }
+}
+
+const especialidades = ref([])
+
+const nuevoMedico = ref({
+  nombres: '',
+  apellidos: '',
+  correo: '',
+  telefono: '',
+  id_especialidad: '',
+  contrasena: ''
+})
+
+
+const cargandoEspecialidades = ref(false)
+const guardandoMedico = ref(false)
+const mensajeMedicoAdmin = ref('')
+const errorMedicoAdmin = ref('')
+
+const horariosMedico = ref([])
+
+const nuevoHorario = ref({
+  id_medico: '',
+  dias_semana: [],
+  hora_inicio: '08:00',
+  hora_fin: '12:00',
+  duracion_cita: 30
+})
+
+const cargandoHorarios = ref(false)
+const guardandoHorario = ref(false)
+const mensajeHorario = ref('')
+const errorHorario = ref('')
+
+const horarioEditando = ref(null)
+const guardandoEdicionHorario = ref(false)
+
+async function abrirHorariosAdmin() {
+  vistaActual.value = 'horarios-admin'
+  errorHorario.value = ''
+  mensajeHorario.value = ''
+
+  if (medicos.value.length === 0) {
+    await abrirSeccion('medicos')
+
+    vistaActual.value = 'horarios-admin'
+  }
+}
+
+async function cargarHorariosMedico() {
+  const idMedico = nuevoHorario.value.id_medico
+
+  if (!idMedico) {
+    horariosMedico.value = []
+    return
+  }
+
+  cargandoHorarios.value = true
+  errorHorario.value = ''
+  mensajeHorario.value = ''
+
+  try {
+    const respuesta = await api.get(`/medicos/${idMedico}/horarios`)
+
+    horariosMedico.value = respuesta.data
+
+  } catch (error) {
+    console.error('Error al cargar horarios:', error)
+
+    errorHorario.value =
+      error.response?.data?.mensaje ||
+      'No fue posible cargar los horarios del médico.'
+
+  } finally {
+    cargandoHorarios.value = false
+  }
+}
+
+async function registrarHorario() {
+  const idMedico = nuevoHorario.value.id_medico
+
+  if (!idMedico) {
+    errorHorario.value = 'Debes seleccionar un médico.'
+    return
+  }
+
+  if (nuevoHorario.value.dias_semana.length === 0) {
+    errorHorario.value = 'Debes seleccionar al menos un día.'
+    return
+  }
+
+  guardandoHorario.value = true
+  errorHorario.value = ''
+  mensajeHorario.value = ''
+
+  try {
+    for (const dia of nuevoHorario.value.dias_semana) {
+      await api.post(`/medicos/${idMedico}/horarios`, {
+        dia_semana: dia,
+        hora_inicio: nuevoHorario.value.hora_inicio,
+        hora_fin: nuevoHorario.value.hora_fin,
+        duracion_cita: Number(nuevoHorario.value.duracion_cita)
+      })
+    }
+
+    mensajeHorario.value = 'Los horarios se registraron correctamente.'
+
+    await cargarHorariosMedico()
+
+    nuevoHorario.value.dias_semana = []
+
+  } catch (error) {
+    console.error('Error al registrar horario:', error)
+
+    errorHorario.value =
+      error.response?.data?.mensaje ||
+      'No fue posible registrar los horarios.'
+
+    await cargarHorariosMedico()
+
+  } finally {
+    guardandoHorario.value = false
+  }
+}
+
+function prepararEdicionHorario(horario) {
+  horarioEditando.value = {
+    id_horario: horario.id_horario,
+    dia_semana: Number(horario.dia_semana),
+    hora_inicio: String(horario.hora_inicio).slice(0, 5),
+    hora_fin: String(horario.hora_fin).slice(0, 5),
+    duracion_cita: Number(horario.duracion_cita),
+    activo: horario.activo
+  }
+
+  errorHorario.value = ''
+  mensajeHorario.value = ''
+}
+
+function cancelarEdicionHorario() {
+  horarioEditando.value = null
+}
+
+async function actualizarHorario() {
+  if (!horarioEditando.value) return
+
+  guardandoEdicionHorario.value = true
+  errorHorario.value = ''
+  mensajeHorario.value = ''
+
+  try {
+    const idHorario = horarioEditando.value.id_horario
+
+    await api.patch(`/horarios/${idHorario}`, {
+      dia_semana: horarioEditando.value.dia_semana,
+      hora_inicio: horarioEditando.value.hora_inicio,
+      hora_fin: horarioEditando.value.hora_fin,
+      duracion_cita: Number(horarioEditando.value.duracion_cita),
+      activo: horarioEditando.value.activo
+    })
+
+    mensajeHorario.value = 'El horario se actualizó correctamente.'
+
+    horarioEditando.value = null
+
+    await cargarHorariosMedico()
+
+  } catch (error) {
+    console.error('Error al actualizar horario:', error)
+
+    errorHorario.value =
+      error.response?.data?.mensaje ||
+      'No fue posible actualizar el horario.'
+
+  } finally {
+    guardandoEdicionHorario.value = false
+  }
+}
+
+const disponibilidad = ref([])
+const cargandoDisponibilidad = ref(false)
+const errorDisponibilidad = ref('')
 
 const citas = ref([])
 const cargandoCitas = ref(false)
 const errorCitas = ref('')
 
-// ==========================================
-// INICIAR SESIÓN
-// ==========================================
+const nuevaCita = ref({
+  id_paciente: '',
+  id_medico: '',
+  fecha: '',
+  hora: '',
+  motivo: ''
+})
+
+const mensajeCita = ref('');
+const errorCita = ref('');
+// GESTIÓN DE PACIENTES - RECEPCIONISTA
+
+const pacientes = ref([])
+const cargandoPacientes = ref(false)
+const errorPacientes = ref('')
+const mensajePacientes = ref('')
+
+const terminoBusqueda = ref('')
+const buscandoPacientes = ref(false)
+
+const nuevoPaciente = ref({
+  nombres: '',
+  apellidos: '',
+  documento: '',
+  correo: '',
+  telefono: ''
+})
+
+const guardandoPaciente = ref(false)
+const mostrarFormularioPaciente = ref(false)
+// FORMULARIO PARA REGISTRAR CITAS
+const mostrarFormularioCita = ref(false)
+const guardandoCita = ref(false)
+const mensajeCitas = ref('')
+const errorRegistroCita = ref('')
+
+const medicosDisponibles = medicos
+const pacientesDisponibles = pacientes
+const horariosDisponibles = disponibilidad
+
+const cargandoCita = ref(false);
 
 async function iniciarSesion() {
   mensaje.value = ''
@@ -95,7 +336,33 @@ async function iniciarSesion() {
 
     mensaje.value = `¡Bienvenido/a, ${usuario.nombre}! Tu inicio de sesión fue exitoso.`
     tipoMensaje.value = 'info'
-    vistaActual.value = 'inicio'
+
+    switch (usuario.rol) {
+      case 'paciente':
+        vistaActual.value = 'inicio'
+        break
+
+      case 'administrador':
+        vistaActual.value = 'administrador'
+        console.log('ROL DEL USUARIO:', usuario.rol)
+        console.log('VISTA ACTUAL:', vistaActual.value)
+        break
+        
+ 
+      case 'medico':
+        vistaActual.value = 'medico'
+        break
+
+      case 'recepcionista':
+        vistaActual.value = 'recepcionista'
+        break
+
+      default:
+        mensaje.value = 'El rol de usuario no está reconocido.'
+        tipoMensaje.value = 'error'
+        cerrarSesion()
+        return
+    }
 
     contrasena.value = ''
 
@@ -119,10 +386,6 @@ async function iniciarSesion() {
   }
 }
 
-// ==========================================
-// CERRAR SESIÓN
-// ==========================================
-
 function cerrarSesion() {
   localStorage.removeItem('token')
   localStorage.removeItem('usuario')
@@ -135,15 +398,16 @@ function cerrarSesion() {
   contrasena.value = ''
 }
 
-// ==========================================
-// ABRIR SECCIONES DE LA APLICACIÓN
-// ==========================================
-
 async function abrirSeccion(seccion) {
   mensaje.value = ''
 
   if (seccion === 'medicos') {
-    vistaActual.value = 'medicos'
+    const esAdministrador = usuarioActual.value?.rol === 'administrador'
+
+    vistaActual.value = esAdministrador
+      ? 'medicos-admin'
+      : 'medicos'
+
     cargandoMedicos.value = true
     errorMedicos.value = ''
 
@@ -161,6 +425,10 @@ async function abrirSeccion(seccion) {
 
     } finally {
       cargandoMedicos.value = false
+    }
+
+    if (esAdministrador) {
+      await cargarEspecialidades()
     }
 
     return
@@ -190,14 +458,172 @@ async function abrirSeccion(seccion) {
     return
   }
 
-  if (seccion === 'perfil') {
-    vistaActual.value = 'perfil'
+  if (seccion === 'pacientes') {
+  vistaActual.value = 'pacientes'
+  terminoBusqueda.value = ''
+  await cargarPacientes()
+  return
+}
+
+if (seccion === 'perfil') {
+  vistaActual.value = 'perfil'
+}
+}
+
+// CONSULTAR TODOS LOS PACIENTES
+async function cargarPacientes() {
+  cargandoPacientes.value = true
+  errorPacientes.value = ''
+
+  try {
+    const respuesta = await api.get('/pacientes')
+    pacientes.value = respuesta.data.pacientes || respuesta.data
+  } catch (error) {
+    errorPacientes.value =
+      error.response?.data?.mensaje || 'No fue posible cargar los pacientes.'
+  } finally {
+    cargandoPacientes.value = false
   }
 }
 
-// ==========================================
-// ABRIR PANTALLA DE REGISTRO
-// ==========================================
+const cargarMedicosParaCita = async () => {
+    try {
+        cargandoMedicos.value = true;
+        errorMedicos.value = '';
+
+        const respuesta = await api.get('/medicos');
+
+        medicos.value = Array.isArray(respuesta.data)
+            ? respuesta.data
+            : [];
+
+    } catch (error) {
+        console.error('Error cargando médicos para la cita:', error);
+
+        errorMedicos.value =
+            error.response?.data?.mensaje ||
+            'No fue posible cargar los médicos.';
+    } finally {
+        cargandoMedicos.value = false;
+    }
+};
+
+async function buscarPacientes() {
+  buscandoPacientes.value = true
+  errorPacientes.value = ''
+
+  try {
+    const respuesta = await api.get('/pacientes/buscar', {
+      params: {
+        termino: terminoBusqueda.value
+      }
+    })
+
+    pacientes.value = respuesta.data.pacientes || respuesta.data
+  } catch (error) {
+    errorPacientes.value =
+      error.response?.data?.mensaje || 'No fue posible realizar la búsqueda.'
+  } finally {
+    buscandoPacientes.value = false
+  }
+}
+
+// REGISTRAR UN PACIENTE DESDE RECEPCIÓN
+async function registrarPacienteRecepcion() {
+  guardandoPaciente.value = true
+  mensajePacientes.value = ''
+  errorPacientes.value = ''
+
+  try {
+    await api.post('/pacientes', nuevoPaciente.value)
+
+    mensajePacientes.value = 'Paciente registrado correctamente.'
+
+    nuevoPaciente.value = {
+      nombres: '',
+      apellidos: '',
+      documento: '',
+      correo: '',
+      telefono: ''
+    }
+
+    mostrarFormularioPaciente.value = false
+
+    await cargarPacientes()
+  } catch (error) {
+    errorPacientes.value =
+      error.response?.data?.mensaje || 'No fue posible registrar el paciente.'
+  } finally {
+    guardandoPaciente.value = false
+  }
+}
+
+async function cargarEspecialidades() {
+  cargandoEspecialidades.value = true
+  errorMedicoAdmin.value = ''
+
+  try {
+    const respuesta = await api.get('/especialidades')
+
+    especialidades.value = Array.isArray(respuesta.data)
+      ? respuesta.data
+      : []
+
+  } catch (error) {
+    console.error('Error al cargar especialidades:', error)
+
+    errorMedicoAdmin.value =
+      error.response?.data?.mensaje ||
+      'No fue posible cargar las especialidades.'
+
+  } finally {
+    cargandoEspecialidades.value = false
+  }
+}
+
+async function registrarMedico() {
+  guardandoMedico.value = true
+  mensajeMedicoAdmin.value = ''
+  errorMedicoAdmin.value = ''
+
+  try {
+    const respuesta = await api.post('/medicos', {
+      nombres: nuevoMedico.value.nombres.trim(),
+      apellidos: nuevoMedico.value.apellidos.trim(),
+      correo: nuevoMedico.value.correo.trim(),
+      telefono: nuevoMedico.value.telefono.trim(),
+      id_especialidad: nuevoMedico.value.id_especialidad,
+      contrasena: nuevoMedico.value.contrasena
+    })
+
+    mensajeMedicoAdmin.value =
+      respuesta.data.mensaje || 'Médico registrado correctamente.'
+
+    nuevoMedico.value = {
+      nombres: '',
+      apellidos: '',
+      correo: '',
+      telefono: '',
+      id_especialidad: '',
+      contrasena: ''
+    }
+
+    const respuestaMedicos = await api.get('/medicos')
+
+    medicos.value = Array.isArray(respuestaMedicos.data)
+      ? respuestaMedicos.data
+      : []
+
+  } catch (error) {
+    console.error('Error al registrar médico:', error)
+
+    errorMedicoAdmin.value =
+      error.response?.data?.mensaje ||
+      'No fue posible registrar el médico. Inténtalo nuevamente.'
+  } finally {
+    guardandoMedico.value = false
+  }
+}
 
 function crearCuenta() {
   mensaje.value = ''
@@ -219,83 +645,118 @@ function crearCuenta() {
   vistaActual.value = 'registro'
 }
 
-// ==========================================
-// REGISTRAR PACIENTE
-// ==========================================
-
 async function registrarPaciente() {
   mensaje.value = ''
   tipoMensaje.value = 'error'
 
-  // Validar campos obligatorios
+  const datos = registro.value
+
+  // 1. Validar campos obligatorios
   if (
-    !registro.value.nombres.trim() ||
-    !registro.value.apellidos.trim() ||
-    !registro.value.documento.trim() ||
-    !registro.value.correo.trim() ||
-    !registro.value.telefono.trim() ||
-    !registro.value.contrasena ||
-    !registro.value.confirmarContrasena
+    !datos.nombres.trim() ||
+    !datos.apellidos.trim() ||
+    !datos.documento.trim() ||
+    !datos.correo.trim() ||
+    !datos.telefono.trim() ||
+    !datos.contrasena ||
+    !datos.confirmarContrasena
   ) {
-    mensaje.value = 'Completa todos los campos.'
+    mensaje.value = 'Todos los campos son obligatorios. Completa la información.'
     return
   }
 
-  // Validar correo electrónico
+  // 2. Validar nombres y apellidos
+  const expresionNombre = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/
+
+  if (!expresionNombre.test(datos.nombres.trim())) {
+    mensaje.value = 'El nombre solo debe contener letras y espacios.'
+    return
+  }
+
+  if (!expresionNombre.test(datos.apellidos.trim())) {
+    mensaje.value = 'Los apellidos solo deben contener letras y espacios.'
+    return
+  }
+
+  // 3. Validar documento
+  if (!/^\d{6,15}$/.test(datos.documento.trim())) {
+    mensaje.value = 'El documento debe contener entre 6 y 15 números.'
+    return
+  }
+
+  // 4. Validar teléfono
+  const telefono = datos.telefono.replace(/\s/g, '')
+
+  if (!/^\d{7,15}$/.test(telefono)) {
+    mensaje.value = 'Ingresa un teléfono válido de entre 7 y 15 números.'
+    return
+  }
+
+  // 5. Validar correo
   const expresionCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-  if (!expresionCorreo.test(registro.value.correo.trim())) {
+  if (!expresionCorreo.test(datos.correo.trim())) {
     mensaje.value = 'Ingresa un correo electrónico válido.'
     return
   }
 
-  // Validar longitud de contraseña
-  if (registro.value.contrasena.length < 8) {
+  // 6. Validar contraseña
+  if (datos.contrasena.length < 8) {
     mensaje.value = 'La contraseña debe tener mínimo 8 caracteres.'
     return
   }
 
-  // Validar coincidencia de contraseñas
-  if (
-    registro.value.contrasena !==
-    registro.value.confirmarContrasena
-  ) {
-    mensaje.value = 'Las contraseñas no coinciden.'
+  if (!/[!@#$%^&*(),.?":{}|<>_\-+=]/.test(datos.contrasena)) {
+    mensaje.value = 'La contraseña debe contener al menos un símbolo.'
+    return
+  }
+
+  // 7. Confirmar contraseña
+  if (datos.contrasena !== datos.confirmarContrasena) {
+    mensaje.value = 'Las contraseñas no coinciden. Verifica la confirmación.'
+    return
+  }
+
+  // 8. Aceptar términos
+  if (!datos.aceptaTerminos) {
+    mensaje.value = 'Debes aceptar los términos y condiciones para continuar.'
     return
   }
 
   registroCargando.value = true
 
   try {
+    const correoRegistrado = datos.correo.trim().toLowerCase()
+
     const respuesta = await api.post('/auth/registro', {
-      nombres: registro.value.nombres.trim(),
-      apellidos: registro.value.apellidos.trim(),
-      documento: registro.value.documento.trim(),
-      correo: registro.value.correo.trim().toLowerCase(),
-      telefono: `${registro.value.prefijo} ${registro.value.telefono.trim()}`,
-      contrasena: registro.value.contrasena
+      nombres: datos.nombres.trim(),
+      apellidos: datos.apellidos.trim(),
+      documento: datos.documento.trim(),
+      correo: correoRegistrado,
+      telefono: `${datos.prefijo} ${telefono}`,
+      contrasena: datos.contrasena
     })
 
-    // Guardar el correo para iniciar sesión
-    correo.value = registro.value.correo.trim().toLowerCase()
+    correo.value = correoRegistrado
 
-    // Limpiar formulario
+    // Reiniciar todos los campos del formulario
     registro.value = {
       nombres: '',
       apellidos: '',
       documento: '',
+      prefijo: '+57',
       correo: '',
       telefono: '',
       contrasena: '',
-      confirmarContrasena: ''
+      confirmarContrasena: '',
+      aceptaTerminos: false
     }
 
-    // Regresar al inicio de sesión
+    mostrarContrasenaRegistro.value = false
     vistaActual.value = 'login'
 
     mensaje.value =
-      respuesta.data.mensaje ||
-      'Cuenta creada exitosamente.'
+      respuesta.data.mensaje || 'Cuenta creada exitosamente.'
 
     tipoMensaje.value = 'info'
 
@@ -311,16 +772,202 @@ async function registrarPaciente() {
   }
 }
 
-// ==========================================
-// RECUPERAR CONTRASEÑA
-// ==========================================
-
 function recuperarContrasena() {
   mensaje.value =
     'La recuperación de contraseña está pendiente de implementar.'
 
   tipoMensaje.value = 'info'
 }
+
+const cargarDisponibilidad = async () => {
+    disponibilidad.value = [];
+    nuevaCita.value.hora = '';
+    errorDisponibilidad.value = '';
+
+    const idMedico = nuevaCita.value.id_medico;
+    const fecha = nuevaCita.value.fecha;
+
+    if (!idMedico || !fecha) {
+        return;
+    }
+
+    try {
+        cargandoDisponibilidad.value = true;
+
+        const respuesta = await api.get(
+            `/medicos/${idMedico}/disponibilidad`,
+            {
+                params: { fecha }
+            }
+        );
+
+        disponibilidad.value = (respuesta.data.disponibilidad || [])
+            .map(item => {
+                const hora = typeof item === 'string'
+                    ? item
+                    : item.hora || item.hora_inicio || item.hora_disponible;
+
+                return hora ? hora.substring(0, 5) : null;
+            })
+            .filter(Boolean);
+
+    } catch (error) {
+        console.error('Error consultando disponibilidad:', error);
+
+        errorDisponibilidad.value =
+            error.response?.data?.mensaje ||
+            'No fue posible consultar los horarios disponibles.';
+    } finally {
+        cargandoDisponibilidad.value = false;
+    }
+};
+
+const abrirFormularioCita = async () => {
+    mostrarFormularioCita.value = true;
+
+    mensajeCita.value = '';
+    errorCita.value = '';
+
+    nuevaCita.value = {
+        id_paciente: '',
+        id_medico: '',
+        fecha: '',
+        hora: '',
+        motivo: ''
+    };
+
+    disponibilidad.value = [];
+
+    await Promise.all([
+        cargarPacientes(),
+        cargarMedicosParaCita()
+    ]);
+};
+
+const cargarCitas = async () => {
+    try {
+        cargandoCitas.value = true;
+        errorCitas.value = '';
+
+        const respuesta = await api.get('/citas');
+
+        citas.value = respuesta.data;
+
+    } catch (error) {
+        console.error('Error cargando citas:', error);
+
+        errorCitas.value =
+            error.response?.data?.mensaje ||
+            'No fue posible cargar las citas.';
+    } finally {
+        cargandoCitas.value = false;
+    }
+};
+
+// ACTUALIZAR ESTADO DE UNA CITA
+const actualizarEstadoCita = async (idCita, estado) => {
+    const accion = estado === 'Confirmada' ? 'confirmar' : 'cancelar';
+
+    const mensajeConfirmacion = estado === 'Confirmada'
+        ? '¿Deseas confirmar esta cita?'
+        : '¿Estás segura de que deseas cancelar esta cita?';
+
+    if (!window.confirm(mensajeConfirmacion)) {
+        return;
+    }
+
+    try {
+        const respuesta = await api.patch(
+            `/citas/${idCita}/estado`,
+            { estado }
+        );
+
+        alert(respuesta.data.mensaje);
+
+        await cargarCitas();
+
+    } catch (error) {
+        console.error(`Error al ${accion} la cita:`, error);
+
+        alert(
+            error.response?.data?.mensaje ||
+            `No fue posible ${accion} la cita.`
+        );
+    }
+};
+
+// CONFIRMAR CITA
+const confirmarCita = (idCita) => {
+    return actualizarEstadoCita(idCita, 'Confirmada');
+};
+
+// CANCELAR CITA
+const cancelarCita = (idCita) => {
+    return actualizarEstadoCita(idCita, 'Cancelada');
+};
+
+const agendarCita = async () => {
+    mensajeCita.value = '';
+    errorCita.value = '';
+
+    const esRecepcionista = usuarioActual.value?.rol === 'recepcionista';
+
+    if (
+        (esRecepcionista && !nuevaCita.value.id_paciente) ||
+        !nuevaCita.value.id_medico ||
+        !nuevaCita.value.fecha ||
+        !nuevaCita.value.hora ||
+        !nuevaCita.value.motivo.trim()
+    ) {
+        errorCita.value = esRecepcionista
+            ? 'Selecciona un paciente, un médico, una fecha, un horario y el motivo de la consulta.'
+            : 'Completa todos los campos para agendar tu cita.';
+        return;
+    }
+
+    try {
+        cargandoCita.value = true;
+
+        const datosCita = {
+            id_medico: Number(nuevaCita.value.id_medico),
+            fecha: nuevaCita.value.fecha,
+            hora: nuevaCita.value.hora,
+            motivo: nuevaCita.value.motivo.trim()
+        };
+
+        if (esRecepcionista) {
+            datosCita.id_paciente = Number(nuevaCita.value.id_paciente);
+        }
+
+        const respuesta = await api.post('/citas', datosCita);
+
+        mensajeCita.value = respuesta.data.mensaje;
+
+        nuevaCita.value = {
+            id_paciente: '',
+            id_medico: '',
+            fecha: '',
+            hora: '',
+            motivo: ''
+        };
+
+        await cargarCitas();
+
+        if (esRecepcionista) {
+            mostrarFormularioCita.value = false;
+        }
+
+    } catch (error) {
+        console.error('Error registrando cita:', error);
+
+        errorCita.value =
+            error.response?.data?.mensaje ||
+            'No fue posible agendar la cita. Inténtalo nuevamente.';
+    } finally {
+        cargandoCita.value = false;
+    }
+};
+
 </script>
 
 
@@ -894,10 +1541,117 @@ function recuperarContrasena() {
 
 
   </section>
+
 </template>
 
+<!-- GESTIÓN DE PACIENTES -->
+<section
+  v-else-if="vistaActual === 'pacientes'"
+  class="contenedor-principal"
+>
+  <div class="encabezado-seccion">
+    <div>
+      <h1>Gestión de pacientes</h1>
+      <p>Consulta, busca y registra pacientes en MediCitas.</p>
+    </div>
 
-      
+    <button type="button" @click="vistaActual = usuarioActual.rol === 'administrador' ? 'administrador' : 'recepcionista'">
+      Volver al panel
+    </button>
+  </div>
+
+  <div class="acciones-pacientes">
+    <input
+      v-model="terminoBusqueda"
+      type="text"
+      placeholder="Buscar por nombre o documento"
+      @keyup.enter="buscarPacientes"
+    />
+
+    <button
+      type="button"
+      @click="buscarPacientes"
+      :disabled="buscandoPacientes"
+    >
+      {{ buscandoPacientes ? 'Buscando...' : 'Buscar' }}
+    </button>
+
+    <button type="button" @click="cargarPacientes">
+      Mostrar todos
+    </button>
+
+    <button
+      type="button"
+      @click="mostrarFormularioPaciente = !mostrarFormularioPaciente"
+    >
+      {{ mostrarFormularioPaciente ? 'Cancelar' : 'Registrar paciente' }}
+    </button>
+  </div>
+
+  <p v-if="mensajePacientes" class="mensaje-exito">
+    {{ mensajePacientes }}
+  </p>
+
+  <p v-if="errorPacientes" class="mensaje-error">
+    {{ errorPacientes }}
+  </p>
+
+  <!-- FORMULARIO -->
+  <form
+    v-if="mostrarFormularioPaciente"
+    @submit.prevent="registrarPacienteRecepcion"
+    class="formulario-paciente"
+  >
+    <h2>Registrar nuevo paciente</h2>
+
+    <input v-model.trim="nuevoPaciente.nombres" type="text" placeholder="Nombres" required />
+    <input v-model.trim="nuevoPaciente.apellidos" type="text" placeholder="Apellidos" required />
+    <input v-model.trim="nuevoPaciente.documento" type="text" placeholder="Documento" required />
+    <input v-model.trim="nuevoPaciente.correo" type="email" placeholder="Correo electrónico" required />
+    <input v-model.trim="nuevoPaciente.telefono" type="tel" placeholder="Teléfono" required />
+
+    <button type="submit" :disabled="guardandoPaciente">
+      {{ guardandoPaciente ? 'Guardando...' : 'Guardar paciente' }}
+    </button>
+  </form>
+
+  <!-- TABLA -->
+  <div class="tabla-pacientes">
+    <h2>Pacientes registrados</h2>
+
+    <p v-if="cargandoPacientes">Cargando pacientes...</p>
+
+    <p v-else-if="pacientes.length === 0">
+      No se encontraron pacientes.
+    </p>
+
+    <table v-else>
+      <thead>
+        <tr>
+          <th>Documento</th>
+          <th>Nombres</th>
+          <th>Apellidos</th>
+          <th>Correo</th>
+          <th>Teléfono</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr
+          v-for="paciente in pacientes"
+          :key="paciente.id_paciente"
+        >
+          <td>{{ paciente.documento }}</td>
+          <td>{{ paciente.nombres }}</td>
+          <td>{{ paciente.apellidos }}</td>
+          <td>{{ paciente.correo }}</td>
+          <td>{{ paciente.telefono }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <section v-else-if="vistaActual === 'inicio'" class="inicio-medicitas">
 
   <!-- BARRA SUPERIOR -->
@@ -1012,7 +1766,14 @@ function recuperarContrasena() {
             <span class="material-symbols-outlined">calendar_month</span>
             <div>
               <small>Fecha</small>
-              <strong>{{ citas[0].fecha }}</strong>
+              <strong>
+  {{ new Date(citas[0].fecha).toLocaleDateString('es-CO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }) }}
+</strong>
             </div>
           </div>
 
@@ -1066,118 +1827,696 @@ function recuperarContrasena() {
   </div>
 </section>
 
-  <section v-if="vistaActual === 'medicos'" class="seccion-medicos">
-    <header class="encabezado-medicos">
-      <button type="button" class="boton-volver" @click="vistaActual = 'inicio'">
-        ← Volver al inicio
-      </button>
+  
+<section v-if="vistaActual === 'medicos'" class="seccion-medicos">
 
-      <p class="etiqueta-inicio">NUESTRO EQUIPO MÉDICO</p>
-      <h1>Encuentra tu especialista</h1>
-      <p>Consulta los profesionales disponibles en MediCitas.</p>
-    </header>
+  <!-- ENCABEZADO -->
+  <header class="encabezado-medicos">
+    <button type="button" class="boton-volver" @click="vistaActual = 'inicio'">
+      ← Volver al inicio
+    </button>
 
-    <p v-if="cargandoMedicos">Cargando médicos...</p>
+    <p class="etiqueta-inicio">NUESTRO EQUIPO MÉDICO</p>
+    <h1>Encuentra tu especialista</h1>
+    <p>Consulta nuestros profesionales y agenda tu próxima cita médica.</p>
+  </header>
 
-    <p v-else-if="errorMedicos" class="error-medicos">
-      {{ errorMedicos }}
-    </p>
+  <!-- LISTADO DE MÉDICOS -->
+  <p v-if="cargandoMedicos">Cargando médicos...</p>
 
-    <div v-else-if="medicos.length" class="lista-medicos">
-      <article
-        v-for="medico in medicos"
-        :key="medico.id_medico"
-        class="tarjeta-medico"
+  <p v-else-if="errorMedicos" class="error-medicos">
+    {{ errorMedicos }}
+  </p>
+
+  <div v-else-if="medicos.length" class="lista-medicos">
+    <article
+      v-for="medico in medicos"
+      :key="medico.id_medico"
+      class="tarjeta-medico"
+    >
+      <div class="icono-medico">
+        <span class="material-symbols-outlined">medical_services</span>
+      </div>
+
+      <h2>Dr./Dra. {{ medico.nombres }} {{ medico.apellidos }}</h2>
+
+      <p class="especialidad-medico">
+        {{ medico.especialidad || medico.nombre_especialidad || 'Especialidad médica' }}
+      </p>
+
+      <p v-if="medico.correo">Correo: {{ medico.correo }}</p>
+      <p v-if="medico.telefono">Teléfono: {{ medico.telefono }}</p>
+
+      <button
+        type="button"
+        @click="nuevaCita.id_medico = String(medico.id_medico)"
       >
-        <div class="icono-medico">
-          <span class="material-symbols-outlined">medical_services</span>
-        </div>
+        Seleccionar médico
+      </button>
+    </article>
+  </div>
 
-        <h2>Dr./Dra. {{ medico.nombres }} {{ medico.apellidos }}</h2>
+  <p v-else>No hay médicos registrados actualmente.</p>
 
-        <p class="especialidad-medico">
-          {{ medico.especialidad || medico.nombre_especialidad || 'Especialidad médica' }}
-        </p>
+  <!-- FORMULARIO PARA AGENDAR -->
+  <section class="formulario-agendar">
 
-        <p v-if="medico.correo">Correo: {{ medico.correo }}</p>
-        <p v-if="medico.telefono">Teléfono: {{ medico.telefono }}</p>
-      </article>
+    <div class="encabezado-formulario">
+      <span class="material-symbols-outlined">calendar_month</span>
+      <div>
+        <h2>Agenda tu cita médica</h2>
+        <p>Completa los siguientes datos para solicitar tu consulta.</p>
+      </div>
     </div>
 
-    <p v-else>No hay médicos registrados actualmente.</p>
+    <form @submit.prevent="agendarCita">
+
+ 
+<!-- MÉDICO -->
+<div class="campo-cita">
+  <label for="medico-cita">Selecciona el médico</label>
+
+  <select
+    id="medico-cita"
+    v-model="nuevaCita.id_medico"
+    @change="cargarDisponibilidad"
+    required
+  >
+    <option value="" disabled>Selecciona un profesional</option>
+
+    <option
+      v-for="medico in medicos"
+      :key="medico.id_medico"
+      :value="String(medico.id_medico)"
+    >
+      Dr./Dra. {{ medico.nombres }} {{ medico.apellidos }}
+      - {{ medico.especialidad || medico.nombre_especialidad || 'Especialista' }}
+    </option>
+  </select>
+</div>
+
+<!-- FECHA -->
+<div class="campo-cita">
+  <label for="fecha-cita">Fecha de la cita</label>
+
+  <input
+    id="fecha-cita"
+    type="date"
+    v-model="nuevaCita.fecha"
+    @change="cargarDisponibilidad"
+    :min="new Date().toISOString().split('T')[0]"
+    required
+  />
+</div>
+
+<!-- HORA DISPONIBLE -->
+<div class="campo-cita">
+  <label for="hora-cita">Hora de la cita</label>
+
+  <select
+    id="hora-cita"
+    v-model="nuevaCita.hora"
+    :disabled="cargandoDisponibilidad || !nuevaCita.id_medico || !nuevaCita.fecha || disponibilidad.length === 0"
+    required
+  >
+    <option value="" disabled>
+      {{ cargandoDisponibilidad
+        ? 'Consultando horarios...'
+        : disponibilidad.length > 0
+          ? 'Selecciona una hora disponible'
+          : 'No hay horarios disponibles' }}
+    </option>
+
+    <option
+      v-for="hora in disponibilidad"
+      :key="hora"
+      :value="hora"
+    >
+      {{ hora }}
+    </option>
+  </select>
+
+  <small v-if="cargandoDisponibilidad">
+    Consultando disponibilidad del médico...
+  </small>
+
+  <small v-else-if="errorDisponibilidad">
+    {{ errorDisponibilidad }}
+  </small>
+
+  <small v-else-if="disponibilidad.length === 0 && nuevaCita.id_medico && nuevaCita.fecha">
+    No hay horarios disponibles para esta fecha. Intenta con otro día.
+  </small>
+</div>
+
+
+      <!-- MOTIVO -->
+      <div class="campo-cita">
+        <label for="motivo-cita">Motivo de la consulta</label>
+
+        <textarea
+          id="motivo-cita"
+          v-model="nuevaCita.motivo"
+          placeholder="Describe brevemente el motivo de tu consulta..."
+          rows="4"
+          required
+        ></textarea>
+      </div>
+
+      <!-- MENSAJES -->
+      <p v-if="mensajeCita" class="mensaje-exito">
+        {{ mensajeCita }}
+      </p>
+
+      <p v-if="errorCita" class="error-medicos">
+        {{ errorCita }}
+      </p>
+
+      <!-- BOTÓN -->
+      <button
+        type="submit"
+        class="boton-agendar"
+        :disabled="cargandoCita"
+      >
+        <span class="material-symbols-outlined">event_available</span>
+
+        {{ cargandoCita ? 'Agendando cita...' : 'Agendar cita' }}
+      </button>
+
+    </form>
   </section>
 
-<section v-if="vistaActual === 'citas'" class="seccion-medicos">
+</section>
+
+
+<!-- ADMINISTRACIÓN DE MÉDICOS -->
+<section
+  v-if="vistaActual === 'medicos-admin'"
+  class="seccion-medicos"
+>
   <header class="encabezado-medicos">
     <button
       type="button"
       class="boton-volver"
-      @click="vistaActual = 'inicio'"
+      @click="vistaActual = 'administrador'"
+    >
+      ← Volver al panel
+    </button>
+
+    <p class="etiqueta-inicio">GESTIÓN ADMINISTRATIVA</p>
+    <h1>Administración de médicos</h1>
+    <p>Consulta y gestiona los profesionales registrados en MediCitas.</p>
+  </header>
+
+  
+<!-- FORMULARIO DE REGISTRO DE MÉDICOS -->
+<div class="formulario-agendar formulario-medico-admin">
+
+  <div class="encabezado-formulario">
+    <span class="material-symbols-outlined">person_add</span>
+    <div>
+      <h2>Registrar nuevo médico</h2>
+      <p>Ingresa los datos del profesional que deseas registrar.</p>
+    </div>
+  </div>
+
+  <form @submit.prevent="registrarMedico">
+
+    <div class="campo-cita">
+      <label for="nuevo-medico-nombres">Nombres</label>
+      <input
+        id="nuevo-medico-nombres"
+        v-model.trim="nuevoMedico.nombres"
+        type="text"
+        placeholder="Nombres del médico"
+        required
+      />
+    </div>
+
+    <div class="campo-cita">
+      <label for="nuevo-medico-apellidos">Apellidos</label>
+      <input
+        id="nuevo-medico-apellidos"
+        v-model.trim="nuevoMedico.apellidos"
+        type="text"
+        placeholder="Apellidos del médico"
+        required
+      />
+    </div>
+
+    <div class="campo-cita">
+      <label for="nuevo-medico-correo">Correo electrónico</label>
+      <input
+        id="nuevo-medico-correo"
+        v-model.trim="nuevoMedico.correo"
+        type="email"
+        placeholder="correo@ejemplo.com"
+        required
+      />
+    </div>
+
+    <div class="campo-cita">
+      <label for="nuevo-medico-telefono">Teléfono</label>
+      <input
+        id="nuevo-medico-telefono"
+        v-model.trim="nuevoMedico.telefono"
+        type="tel"
+        placeholder="Número de contacto"
+        required
+      />
+    </div>
+
+    <div class="campo-cita">
+      <label for="nuevo-medico-especialidad">Especialidad</label>
+
+      <select
+        id="nuevo-medico-especialidad"
+        v-model="nuevoMedico.id_especialidad"
+        required
+        :disabled="cargandoEspecialidades"
+      >
+        <option value="" disabled>
+          {{ cargandoEspecialidades
+            ? 'Cargando especialidades...'
+            : 'Selecciona una especialidad' }}
+        </option>
+
+        <option
+          v-for="especialidad in especialidades"
+          :key="especialidad.id_especialidad"
+          :value="String(especialidad.id_especialidad)"
+        >
+          {{ especialidad.nombre }}
+        </option>
+      </select>
+    </div>
+
+    <div class="campo-cita">
+      <label for="nuevo-medico-contrasena">
+        Contraseña inicial
+      </label>
+
+  <input
+    id="nuevo-medico-contrasena"
+    v-model="nuevoMedico.contrasena"
+    type="password"
+    placeholder="Mínimo 8 caracteres"
+    minlength="8"
+    required
+  />
+</div>
+
+    <p v-if="mensajeMedicoAdmin" class="mensaje-exito">
+      {{ mensajeMedicoAdmin }}
+    </p>
+
+    <p v-if="errorMedicoAdmin" class="error-medicos">
+      {{ errorMedicoAdmin }}
+    </p>
+
+    <button
+      type="submit"
+      class="boton-agendar"
+      :disabled="guardandoMedico || cargandoEspecialidades"
+    >
+      <span class="material-symbols-outlined">person_add</span>
+      {{ guardandoMedico ? 'Registrando...' : 'Registrar médico' }}
+    </button>
+
+  </form>
+</div>
+
+
+  <div class="bienvenida-admin">
+    <span class="material-symbols-outlined">medical_services</span>
+    <div>
+      <h2>Profesionales registrados</h2>
+      <p>Listado de médicos de la clínica.</p>
+    </div>
+  </div>
+
+  <p v-if="cargandoMedicos">Cargando médicos...</p>
+
+  <p v-else-if="errorMedicos" class="error-medicos">
+    {{ errorMedicos }}
+  </p>
+
+  <div v-else-if="medicos.length" class="lista-medicos">
+    <article
+      v-for="medico in medicos"
+      :key="medico.id_medico"
+      class="tarjeta-medico"
+    >
+      <div class="icono-medico">
+        <span class="material-symbols-outlined">
+          medical_services
+        </span>
+      </div>
+
+      <h2>Dr./Dra. {{ medico.nombres }} {{ medico.apellidos }}</h2>
+
+      <p>
+        <strong>Especialidad:</strong>
+        {{ medico.especialidad || medico.nombre_especialidad || 'No registrada' }}
+      </p>
+
+      <p v-if="medico.correo">
+        <strong>Correo:</strong> {{ medico.correo }}
+      </p>
+
+      <p v-if="medico.telefono">
+        <strong>Teléfono:</strong> {{ medico.telefono }}
+      </p>
+
+      <p>
+  <strong>Estado:</strong>
+  {{ medico.estado || 'Activo' }}
+</p>
+
+<div class="acciones-medico">
+  <button
+    type="button"
+    @click="cambiarEstadoMedico(medico)"
+    :disabled="procesandoEstadoMedico === medico.id_medico"
+  >
+    {{
+      procesandoEstadoMedico === medico.id_medico
+        ? 'Procesando...'
+        : medico.estado === 'activo'
+          ? 'Desactivar médico'
+          : 'Activar médico'
+    }}
+  </button>
+</div>
+</article>
+  </div>
+  <p v-else>No hay médicos registrados.</p>
+</section>
+
+<!-- SECCIÓN DE CITAS MÉDICAS -->
+<section v-if="vistaActual === 'citas'" class="seccion-citas">
+
+  <header class="encabezado-citas">
+    <button
+      type="button"
+      class="boton-volver"
+      @click="vistaActual = usuarioActual?.rol === 'medico'
+        ? 'medico'
+        : usuarioActual?.rol === 'administrador'
+          ? 'administrador'
+          : usuarioActual?.rol === 'recepcionista'
+            ? 'recepcionista'
+            : 'inicio'"
     >
       ← Volver al inicio
     </button>
 
-    <p class="etiqueta-inicio">MI ATENCIÓN MÉDICA</p>
-    <h1>Mis citas médicas</h1>
-    <p>Consulta las citas registradas en MediCitas.</p>
+    <p class="etiqueta-inicio">
+      {{ usuarioActual?.rol === 'medico'
+        ? 'AGENDA PROFESIONAL'
+        : 'MI ATENCIÓN MÉDICA' }}
+    </p>
+
+    <h1>
+      {{ usuarioActual?.rol === 'medico'
+        ? 'Citas asignadas'
+        : 'Mis citas médicas' }}
+    </h1>
+
+        <p>
+      {{ usuarioActual?.rol === 'medico'
+        ? 'Consulta los pacientes y las citas programadas en tu agenda.'
+        : usuarioActual?.rol === 'recepcionista'
+          ? 'Gestiona las citas médicas y agenda nuevas consultas para los pacientes.'
+          : 'Consulta las citas registradas en MediCitas.' }}
+    </p>
+
+    <button
+      v-if="usuarioActual?.rol === 'recepcionista'"
+      type="button"
+      class="boton-registrar-cita"
+      @click="abrirFormularioCita"
+    >
+      <span class="material-symbols-outlined">add</span>
+      Registrar cita
+    </button>
   </header>
 
-  <div class="lista-medicos">
-    <p v-if="cargandoCitas">Cargando citas...</p>
+  <!-- FORMULARIO PARA REGISTRAR UNA CITA -->
+<div
+  v-if="usuarioActual?.rol === 'recepcionista' && mostrarFormularioCita"
+  class="formulario-registro-cita"
+>
+  <div class="encabezado-formulario-cita">
+    <div>
+      <h2>Agendar nueva cita</h2>
+      <p>Completa los datos para programar una consulta médica.</p>
+    </div>
+
+    <button
+      type="button"
+      class="cerrar-formulario-cita"
+      @click="mostrarFormularioCita = false"
+    >
+      ×
+    </button>
+  </div>
+
+  <form @submit.prevent="agendarCita">
+    <div class="campos-formulario-cita">
+
+      <div class="campo-cita">
+        <label>Paciente</label>
+        <select v-model="nuevaCita.id_paciente" required>
+          <option value="">Selecciona un paciente</option>
+          <option
+            v-for="paciente in pacientesDisponibles"
+            :key="paciente.id_paciente"
+            :value="paciente.id_paciente"
+          >
+            {{ paciente.nombres }} {{ paciente.apellidos }}
+          </option>
+        </select>
+      </div>
+
+      <div class="campo-cita">
+  <label>Médico</label>
+  <select
+    v-model="nuevaCita.id_medico"
+    @change="cargarDisponibilidad"
+    required
+  >
+    <option value="">Selecciona un médico</option>
+
+    <option v-for="medico in medicosDisponibles.filter(m => String(m.estado).toLowerCase() === 'activo')"
+      :key="medico.id_medico"
+      :value="medico.id_medico"
+    >
+      Dr. {{ medico.nombres }} {{ medico.apellidos }} - {{ medico.especialidad }}
+    </option>
+  </select>
+</div>
+
+      <div class="campo-cita">
+        <label>Fecha</label>
+        <input
+          type="date"
+          v-model="nuevaCita.fecha"
+          :min="new Date().toISOString().split('T')[0]"
+          @change="cargarDisponibilidad"
+          required
+        />
+      </div>
+
+      <div class="campo-cita">
+        <label>Horario disponible</label>
+        <select v-model="nuevaCita.hora" required>
+          <option value="">Selecciona un horario</option>
+          <option
+  v-for="horario in horariosDisponibles"
+  :key="horario"
+  :value="horario"
+>
+  {{ horario }}
+</option>
+        </select>
+      </div>
+
+      <div class="campo-cita campo-cita-completo">
+        <label>Motivo de la consulta</label>
+        <textarea
+          v-model="nuevaCita.motivo"
+          placeholder="Describe brevemente el motivo de la consulta"
+          rows="3"
+          required
+        ></textarea>
+      </div>
+
+    </div>
+
+    <p v-if="errorCita" class="mensaje-error-cita">
+      {{ errorCita }}
+    </p>
+
+    <p v-if="mensajeCita" class="mensaje-exito-cita">
+      {{ mensajeCita }}
+    </p>
+
+    <div class="acciones-formulario-cita">
+      <button
+        type="button"
+        class="boton-cancelar-cita"
+        @click="mostrarFormularioCita = false"
+      >
+        Cancelar
+      </button>
+
+      <button
+        type="submit"
+        class="boton-guardar-cita"
+        :disabled="cargandoCita"
+      >
+        {{ cargandoCita ? 'Registrando...' : 'Guardar cita' }}
+      </button>
+    </div>
+  </form>
+</div>
+
+  <div class="resumen-citas">
+    <div class="resumen-cita">
+      <span class="material-symbols-outlined">calendar_month</span>
+      <div>
+        <strong>{{ citas.length }}</strong>
+        <p>Citas registradas</p>
+      </div>
+    </div>
+
+    <div class="resumen-cita">
+      <span class="material-symbols-outlined">schedule</span>
+      <div>
+        <strong>{{ citas.filter(c => (c.estado || 'Pendiente').toLowerCase() === 'pendiente').length }}</strong>
+        <p>Pendientes</p>
+      </div>
+    </div>
+
+    <div class="resumen-cita">
+      <span class="material-symbols-outlined">event_available</span>
+      <div>
+        <strong>{{ citas.filter(c => c.estado?.toLowerCase() === 'confirmada').length }}</strong>
+        <p>Confirmadas</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="lista-citas">
+
+    <p v-if="cargandoCitas" class="estado-citas">
+      Cargando citas médicas...
+    </p>
 
     <p v-else-if="errorCitas" class="error-medicos">
       {{ errorCitas }}
     </p>
 
-    <article
-      v-else-if="citas.length"
-      v-for="cita in citas"
-      :key="cita.id_cita"
-      class="tarjeta-medico"
-    >
-      <div class="icono-medico">
-        <span class="material-symbols-outlined">calendar_month</span>
-      </div>
+    <template v-else-if="citas.length">
 
-      <h2>Cita #{{ cita.id_cita }}</h2>
+      <article
+        v-for="cita in citas"
+        :key="cita.id_cita"
+        class="tarjeta-cita"
+      >
+        <div class="tarjeta-cita-superior">
+          <div class="icono-cita">
+            <span class="material-symbols-outlined">calendar_month</span>
+          </div>
 
-      <p>
-        <strong>Fecha:</strong>
-        {{ cita.fecha }}
-      </p>
+          <div class="informacion-cita">
+            <h2>Cita #{{ cita.id_cita }}</h2>
+            <p>
+              {{ new Date(cita.fecha).toLocaleDateString('es-CO', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+                timeZone: 'UTC'
+              }) }}
+              · {{ cita.hora }}
+            </p>
+          </div>
 
-      <p>
-        <strong>Hora:</strong>
-        {{ cita.hora }}
-      </p>
+          <span
+            class="estado-cita"
+            :class="`estado-${(cita.estado || 'Pendiente').toLowerCase()}`"
+          >
+            {{ cita.estado || 'Pendiente' }}
+          </span>
+        </div>
 
-      <p v-if="cita.nombre_paciente || cita.paciente">
-        <strong>Paciente:</strong>
-        {{ cita.nombre_paciente || cita.paciente }}
-      </p>
+        <div class="detalles-cita">
+          <div v-if="cita.nombres_paciente">
+            <span class="material-symbols-outlined">person</span>
+            <p>
+              <strong>Paciente</strong>
+              {{ cita.nombres_paciente }} {{ cita.apellidos_paciente }}
+            </p>
+          </div>
 
-      <p v-if="cita.nombre_medico || cita.medico">
-        <strong>Médico:</strong>
-        {{ cita.nombre_medico || cita.medico }}
-      </p>
+          <div v-if="cita.nombres_medico">
+            <span class="material-symbols-outlined">medical_services</span>
+            <p>
+              <strong>Médico</strong>
+              {{ cita.nombres_medico }} {{ cita.apellidos_medico }}
+            </p>
+          </div>
 
-      <p v-if="cita.especialidad">
-        <strong>Especialidad:</strong>
-        {{ cita.especialidad }}
-      </p>
+          <div v-if="cita.especialidad">
+            <span class="material-symbols-outlined">health_and_safety</span>
+            <p>
+              <strong>Especialidad</strong>
+              {{ cita.especialidad }}
+            </p>
+          </div>
 
-      <p v-if="cita.motivo">
-        <strong>Motivo:</strong>
-        {{ cita.motivo }}
-      </p>
+          <div v-if="cita.motivo">
+            <span class="material-symbols-outlined">description</span>
+            <p>
+              <strong>Motivo de consulta</strong>
+              {{ cita.motivo }}
+            </p>
+          </div>
+        </div>
+                <!-- ACCIONES DE LA CITA -->
+        <div
+          v-if="usuarioActual?.rol === 'recepcionista'"
+          class="acciones-tarjeta-cita"
+        >
+          <button
+            v-if="(cita.estado || 'Pendiente').toLowerCase() === 'pendiente'"
+            type="button"
+            class="boton-confirmar-cita"
+            @click="confirmarCita(cita.id_cita)"
+          >
+            <span class="material-symbols-outlined">check_circle</span>
+            Confirmar
+          </button>
 
-      <p>
-        <strong>Estado:</strong>
-        {{ cita.estado || 'Pendiente' }}
-      </p>
-    </article>
+          <button
+            v-if="(cita.estado || 'Pendiente').toLowerCase() !== 'cancelada'"
+            type="button"
+            class="boton-cancelar-cita-listado"
+            @click="cancelarCita(cita.id_cita)"
+          >
+            <span class="material-symbols-outlined">cancel</span>
+            Cancelar
+          </button>
+        </div>
+      </article>
 
-    <p v-else>No hay citas registradas.</p>
+    </template>
+
+    <p v-else class="estado-citas">
+      No hay citas registradas.
+    </p>
+
   </div>
 </section>
 
@@ -1223,6 +2562,494 @@ function recuperarContrasena() {
   </article>
 </section>
 
+
+<!-- PANEL PRINCIPAL DEL MÉDICO -->
+<section
+  v-if="vistaActual === 'medico'"
+  class="panel-administrador"
+>
+  <header class="encabezado-admin">
+    <div class="bienvenida-admin">
+      <span class="material-symbols-outlined">medical_services</span>
+      <div>
+        <p class="etiqueta-inicio">PANEL PROFESIONAL</p>
+        <h1>Bienvenido(a), Dr./Dra. {{ usuarioActual?.nombre }}</h1>
+        <p>Gestiona tu actividad médica en MediCitas.</p>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      class="boton-volver"
+      @click="cerrarSesion"
+    >
+      <span class="material-symbols-outlined">logout</span>
+      Cerrar sesión
+    </button>
+  </header>
+
+  <div class="opciones-admin">
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('citas')"
+    >
+      <span class="material-symbols-outlined">calendar_month</span>
+      <h2>Mis citas</h2>
+      <p>Consulta las citas asignadas a tu agenda.</p>
+    </button>
+
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="vistaActual = 'perfil'"
+    >
+      <span class="material-symbols-outlined">person</span>
+      <h2>Mi perfil</h2>
+      <p>Consulta tu información personal.</p>
+    </button>
+  </div>
+</section>
+
+
+<!-- PANEL ADMINISTRATIVO -->
+<section
+  v-if="vistaActual === 'administrador'"
+  class="panel-administrador"
+>
+  <header class="encabezado-admin">
+    <div>
+      <p class="etiqueta-inicio">PANEL DE CONTROL</p>
+      <h1>Administración de MediCitas</h1>
+      <p>Gestiona los médicos, pacientes, citas y horarios de la clínica.</p>
+    </div>
+
+    <button
+      type="button"
+      class="boton-volver"
+      @click="cerrarSesion"
+    >
+      <span class="material-symbols-outlined">logout</span>
+      Cerrar sesión
+    </button>
+  </header>
+
+  <div class="bienvenida-admin">
+    <span class="material-symbols-outlined">admin_panel_settings</span>
+    <div>
+      <h2>Bienvenido/a, {{ usuarioActual?.nombre || 'Administrador' }}</h2>
+      <p>Desde aquí puedes administrar la información de MediCitas.</p>
+    </div>
+  </div>
+
+  <div class="opciones-admin">
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('medicos')"
+    >
+      <span class="material-symbols-outlined">medical_services</span>
+      <h3>Médicos</h3>
+      <p>Consultar profesionales registrados.</p>
+    </button>
+
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('pacientes')"
+    >
+      <span class="material-symbols-outlined">groups</span>
+      <h3>Pacientes</h3>
+      <p>Consultar pacientes registrados.</p>
+    </button>
+
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('citas')"
+    >
+      <span class="material-symbols-outlined">calendar_month</span>
+      <h3>Citas médicas</h3>
+      <p>Consultar las citas de la clínica.</p>
+    </button>
+
+    <button
+  type="button"
+  class="opcion-admin"
+  @click="abrirHorariosAdmin"
+>
+  <span class="material-symbols-outlined">schedule</span>
+  <h3>Horarios</h3>
+  <p>Gestionar la disponibilidad médica.</p>
+</button>
+  </div>
+</section>
+
+<!-- PANEL DEL RECEPCIONISTA -->
+<section
+  v-else-if="vistaActual === 'recepcionista'"
+  class="panel-administrador"
+>
+  <header class="encabezado-admin">
+    <div>
+      <p class="etiqueta-inicio">PANEL DE RECEPCIÓN</p>
+      <h1>Recepción de MediCitas</h1>
+      <p>Gestiona pacientes y consulta las citas médicas de la clínica.</p>
+    </div>
+
+    <button
+      type="button"
+      class="boton-volver"
+      @click="cerrarSesion"
+    >
+      <span class="material-symbols-outlined">logout</span>
+      Cerrar sesión
+    </button>
+  </header>
+
+  <div class="bienvenida-admin">
+    <span class="material-symbols-outlined">support_agent</span>
+    <div>
+      <h2>Bienvenido/a, {{ usuarioActual?.nombre || 'Recepcionista' }}</h2>
+      <p>Desde aquí puedes atender a los pacientes y gestionar sus citas.</p>
+    </div>
+  </div>
+
+  <div class="opciones-admin">
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('pacientes')"
+    >
+      <span class="material-symbols-outlined">groups</span>
+      <h3>Pacientes</h3>
+      <p>Buscar, consultar y registrar pacientes.</p>
+    </button>
+
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('citas')"
+    >
+      <span class="material-symbols-outlined">calendar_month</span>
+      <h3>Citas médicas</h3>
+      <p>Consultar las citas médicas registradas.</p>
+    </button>
+
+    <button
+      type="button"
+      class="opcion-admin"
+      @click="abrirSeccion('medicos')"
+    >
+      <span class="material-symbols-outlined">medical_services</span>
+      <h3>Médicos</h3>
+      <p>Consultar los profesionales registrados.</p>
+    </button>
+  </div>
+</section>
+
+<!-- ADMINISTRACIÓN DE HORARIOS MÉDICOS -->
+<section
+  v-if="vistaActual === 'horarios-admin'"
+  class="seccion-medicos"
+>
+  <header class="encabezado-medicos">
+    <button
+      type="button"
+      class="boton-volver"
+      @click="vistaActual = 'administrador'"
+    >
+      ← Volver al panel
+    </button>
+
+    <p class="etiqueta-inicio">GESTIÓN ADMINISTRATIVA</p>
+    <h1>Administración de horarios</h1>
+    <p>Registra y consulta la disponibilidad de los médicos.</p>
+  </header>
+
+  <form
+    class="formulario-agendar"
+    @submit.prevent="registrarHorario"
+  >
+    <h2>Registrar disponibilidad</h2>
+
+    <!-- SELECCIONAR MÉDICO -->
+    <div class="campo-cita">
+      <label for="medico-horario">Seleccionar médico</label>
+
+      <select
+        id="medico-horario"
+        v-model="nuevoHorario.id_medico"
+        @change="cargarHorariosMedico"
+        required
+      >
+        <option value="" disabled>
+          Selecciona un médico
+        </option>
+
+        <option
+          v-for="medico in medicos"
+          :key="medico.id_medico"
+          :value="medico.id_medico"
+        >
+          Dr./Dra. {{ medico.nombres }} {{ medico.apellidos }}
+        </option>
+      </select>
+    </div>
+
+    <!-- DÍAS DE ATENCIÓN -->
+    <div class="campo-cita">
+      <label>Días de atención</label>
+
+      <div class="dias-horario">
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="1">
+          Lunes
+        </label>
+
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="2">
+          Martes
+        </label>
+
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="3">
+          Miércoles
+        </label>
+
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="4">
+          Jueves
+        </label>
+
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="5">
+          Viernes
+        </label>
+
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="6">
+          Sábado
+        </label>
+
+        <label>
+          <input type="checkbox" v-model="nuevoHorario.dias_semana" :value="7">
+          Domingo
+        </label>
+      </div>
+    </div>
+
+    <!-- HORAS -->
+    <div class="campo-cita">
+      <label for="hora-inicio">Hora de inicio</label>
+
+      <input
+        id="hora-inicio"
+        type="time"
+        v-model="nuevoHorario.hora_inicio"
+        required
+      />
+    </div>
+
+    <div class="campo-cita">
+      <label for="hora-fin">Hora de finalización</label>
+
+      <input
+        id="hora-fin"
+        type="time"
+        v-model="nuevoHorario.hora_fin"
+        required
+      />
+    </div>
+
+    <!-- DURACIÓN -->
+    <div class="campo-cita">
+      <label for="duracion-cita">Duración de cada cita</label>
+
+      <select
+        id="duracion-cita"
+        v-model="nuevoHorario.duracion_cita"
+        required
+      >
+        <option :value="15">15 minutos</option>
+        <option :value="20">20 minutos</option>
+        <option :value="30">30 minutos</option>
+        <option :value="45">45 minutos</option>
+        <option :value="60">60 minutos</option>
+      </select>
+    </div>
+
+    <!-- MENSAJES -->
+    <p v-if="mensajeHorario" class="mensaje-exito">
+      {{ mensajeHorario }}
+    </p>
+
+    <p v-if="errorHorario" class="error-medicos">
+      {{ errorHorario }}
+    </p>
+
+    <!-- GUARDAR -->
+    <button
+      type="submit"
+      class="boton-agendar"
+      :disabled="guardandoHorario"
+    >
+      <span class="material-symbols-outlined">save</span>
+
+      {{ guardandoHorario ? 'Guardando horarios...' : 'Registrar horarios' }}
+    </button>
+  </form>
+
+  <!-- HORARIOS REGISTRADOS -->
+  <section class="lista-medicos">
+    <h2>Horarios registrados</h2>
+
+    <p v-if="!nuevoHorario.id_medico">
+      Selecciona un médico para consultar sus horarios.
+    </p>
+
+    <p v-else-if="cargandoHorarios">
+      Consultando horarios...
+    </p>
+
+    <p v-else-if="horariosMedico.length === 0">
+      Este médico todavía no tiene horarios registrados.
+    </p>
+
+    <article
+      v-for="horario in horariosMedico"
+      :key="horario.id_horario"
+      class="tarjeta-medico"
+    >
+      <h3>
+        {{
+          ['',
+          'Lunes',
+          'Martes',
+          'Miércoles',
+          'Jueves',
+          'Viernes',
+          'Sábado',
+          'Domingo'][Number(horario.dia_semana)]
+        }}
+      </h3>
+
+      <!-- FORMULARIO PARA EDITAR HORARIO -->
+<div
+  v-if="horarioEditando?.id_horario === horario.id_horario"
+  class="formulario-edicion-horario"
+>
+  <h4>Editar horario</h4>
+
+  <div class="campo-cita">
+    <label>Día de atención</label>
+
+    <select v-model.number="horarioEditando.dia_semana">
+      <option :value="1">Lunes</option>
+      <option :value="2">Martes</option>
+      <option :value="3">Miércoles</option>
+      <option :value="4">Jueves</option>
+      <option :value="5">Viernes</option>
+      <option :value="6">Sábado</option>
+      <option :value="7">Domingo</option>
+    </select>
+  </div>
+
+  <div class="campo-cita">
+    <label>Hora de inicio</label>
+
+    <input
+      type="time"
+      v-model="horarioEditando.hora_inicio"
+      required
+    />
+  </div>
+
+  <div class="campo-cita">
+    <label>Hora de finalización</label>
+
+    <input
+      type="time"
+      v-model="horarioEditando.hora_fin"
+      required
+    />
+  </div>
+
+  <div class="campo-cita">
+    <label>Duración de cada cita</label>
+
+    <select v-model.number="horarioEditando.duracion_cita">
+      <option :value="15">15 minutos</option>
+      <option :value="20">20 minutos</option>
+      <option :value="30">30 minutos</option>
+      <option :value="45">45 minutos</option>
+      <option :value="60">60 minutos</option>
+    </select>
+  </div>
+
+  <div class="campo-cita">
+    <label>
+      <input
+        type="checkbox"
+        v-model="horarioEditando.activo"
+      />
+      Horario activo
+    </label>
+  </div>
+
+  <div class="acciones-horario">
+    <button
+      type="button"
+      class="boton-agendar"
+      @click="actualizarHorario"
+      :disabled="guardandoEdicionHorario"
+    >
+      {{ guardandoEdicionHorario ? 'Guardando...' : 'Guardar cambios' }}
+    </button>
+
+    <button
+      type="button"
+      class="boton-volver"
+      @click="cancelarEdicionHorario"
+    >
+      Cancelar
+    </button>
+  </div>
+</div>
+
+      <p>
+        <strong>Desde:</strong>
+        {{ String(horario.hora_inicio).slice(0, 5) }}
+      </p>
+
+      <p>
+        <strong>Hasta:</strong>
+        {{ String(horario.hora_fin).slice(0, 5) }}
+      </p>
+
+      <p>
+        <strong>Duración de la cita:</strong>
+        {{ horario.duracion_cita }} minutos
+      </p>
+
+      <p>
+        <strong>Estado:</strong>
+        {{ horario.activo ? 'Activo' : 'Inactivo' }}
+      </p>
+      <div class="acciones-horario">
+  <button
+    type="button"
+    class="boton-agendar"
+    @click="prepararEdicionHorario(horario)"
+    :disabled="horarioEditando !== null"
+  >
+    <span class="material-symbols-outlined">edit</span>
+    Editar
+  </button>
+</div>
+    </article>
+  </section>
+</section>
     </main>
   </template>
 
@@ -2127,11 +3954,6 @@ function recuperarContrasena() {
     color: #b42318;
   }
 
-  
-/* ========================================
-   FORMULARIO DE REGISTRO
-======================================== */
-
 .formulario-registro {
   gap: 14px;
 }
@@ -2151,7 +3973,6 @@ function recuperarContrasena() {
   cursor: not-allowed;
 }
 
-/* Permitir desplazamiento cuando el formulario sea largo */
 .pagina:has(.formulario-registro) {
   overflow-y: auto;
   align-items: flex-start;
@@ -2162,7 +3983,6 @@ function recuperarContrasena() {
   margin-bottom: 10px;
 }
 
-/* Adaptación para celulares */
 @media (max-width: 900px) {
   .pagina:has(.formulario-registro) .contenedor {
     grid-template-columns: 1fr;
@@ -2188,10 +4008,6 @@ function recuperarContrasena() {
   }
 }
 
-/* =========================================
-   REGISTRO DE PACIENTES - MEDICITAS
-========================================= */
-
 .registro-pagina {
   min-height: 100vh;
   width: 100%;
@@ -2215,8 +4031,6 @@ function recuperarContrasena() {
   border-radius: 22px;
   box-shadow: 0 18px 55px rgba(20, 45, 80, 0.10);
 }
-
-/* PANEL IZQUIERDO */
 
 .registro-panel-lateral {
   padding: 48px;
@@ -2338,8 +4152,6 @@ function recuperarContrasena() {
   font-size: 11px;
 }
 
-/* PANEL DERECHO */
-
 .registro-formulario-panel {
   padding: 48px 60px;
   display: flex;
@@ -2375,8 +4187,6 @@ function recuperarContrasena() {
   line-height: 1.6;
 }
 
-/* MENSAJES */
-
 .registro-aviso {
   margin-bottom: 20px;
   padding: 13px 15px;
@@ -2390,8 +4200,6 @@ function recuperarContrasena() {
   background: #f0f8ff;
   color: #245d83;
 }
-
-/* FORMULARIO */
 
 .registro-formulario {
   display: flex;
@@ -2530,8 +4338,6 @@ function recuperarContrasena() {
   font-size: 11px;
 }
 
-/* TÉRMINOS Y BOTÓN */
-
 .registro-terminos {
   display: flex;
   align-items: flex-start;
@@ -2594,8 +4400,6 @@ function recuperarContrasena() {
   font-size: 10px;
   text-align: center;
 }
-
-/* DISEÑO RESPONSIVE */
 
 @media (max-width: 950px) {
   .registro-pagina {
@@ -2665,12 +4469,6 @@ function recuperarContrasena() {
   }
 }
 
-
-/* ==========================================
-   CORRECCIÓN DEFINITIVA DE LOS CAMPOS
-========================================== */
-
-/* Contenedor de cada campo con icono */
 .registro-grupo .registro-input {
   display: flex;
   align-items: center;
@@ -2690,14 +4488,12 @@ function recuperarContrasena() {
   box-shadow: 0 0 0 3px rgba(52, 135, 189, 0.12);
 }
 
-/* Iconos dentro de los campos */
 .registro-grupo .registro-input > .material-symbols-outlined {
   flex-shrink: 0;
   color: #8192a5;
   font-size: 20px;
 }
 
-/* El input debe ocupar el espacio restante */
 .registro-grupo .registro-input > input {
   display: block;
   flex: 1;
@@ -2721,7 +4517,6 @@ function recuperarContrasena() {
   box-shadow: none;
 }
 
-/* Botón para mostrar contraseña */
 .registro-grupo .registro-input > button.registro-ver {
   position: static;
   flex-shrink: 0;
@@ -2743,7 +4538,6 @@ function recuperarContrasena() {
   font-size: 18px;
 }
 
-/* Campos de teléfono */
 .registro-telefono {
   display: grid;
   grid-template-columns: 105px minmax(0, 1fr);
@@ -2766,7 +4560,6 @@ function recuperarContrasena() {
   box-sizing: border-box;
 }
 
-/* Distribución de los campos */
 .registro-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2787,12 +4580,10 @@ function recuperarContrasena() {
   width: 100%;
 }
 
-/* Título blanco sobre el fondo azul */
 .registro-presentacion h1 {
   color: #ffffff !important;
 }
 
-/* Ajustes para pantallas pequeñas */
 @media (max-width: 700px) {
   .registro-grid {
     grid-template-columns: 1fr;
@@ -2813,12 +4604,6 @@ function recuperarContrasena() {
   flex: 1;
 }
 
-/* =========================================
-   PANEL DE INICIO - MEDICITAS
-   ESTILOS ORGANIZADOS
-========================================= */
-
-/* Evitar que el diseño del login afecte al panel */
 .pagina:has(.inicio-medicitas) {
   display: block;
   min-height: 100vh;
@@ -2839,8 +4624,6 @@ function recuperarContrasena() {
   color: #183153;
   font-family: 'Manrope', sans-serif;
 }
-
-/* BARRA SUPERIOR */
 
 .barra-inicio {
   width: 100%;
@@ -2936,15 +4719,11 @@ function recuperarContrasena() {
   color: #c43d3d;
 }
 
-/* CONTENIDO */
-
 .contenido-inicio {
   width: min(1180px, 90%);
   margin: 0 auto;
   padding: 45px 0 55px;
 }
-
-/* BIENVENIDA */
 
 .bienvenida-inicio {
   display: flex;
@@ -3017,8 +4796,6 @@ function recuperarContrasena() {
   font-size: 11px;
   line-height: 1.5;
 }
-
-/* TARJETAS PRINCIPALES */
 
 .panel-tarjetas {
   display: grid;
@@ -3133,8 +4910,6 @@ function recuperarContrasena() {
   background: #e2dcff;
 }
 
-/* TARJETA DE INFORMACIÓN DE CITAS */
-
 .tarjeta-proxima {
   background: linear-gradient(145deg, #1769b1, #164b83);
   border: 0;
@@ -3199,8 +4974,6 @@ function recuperarContrasena() {
 .tarjeta-proxima > button:hover {
   background: #eaf3ff;
 }
-
-/* ACCIONES RÁPIDAS */
 
 .acciones-inicio {
   margin-bottom: 30px;
@@ -3276,8 +5049,6 @@ function recuperarContrasena() {
   line-height: 1.5;
 }
 
-/* MENSAJE INFORMATIVO */
-
 .mensaje-inicio {
   width: 100%;
   padding: 19px 22px;
@@ -3305,8 +5076,6 @@ function recuperarContrasena() {
   font-size: 11px;
   line-height: 1.6;
 }
-
-/* TABLETS */
 
 @media (max-width: 1000px) {
   .barra-inicio {
@@ -3336,8 +5105,6 @@ function recuperarContrasena() {
     min-width: 250px;
   }
 }
-
-/* CELULARES */
 
 @media (max-width: 600px) {
   .barra-inicio {
@@ -3395,5 +5162,1472 @@ function recuperarContrasena() {
   .accion-rapida {
     min-height: 125px;
   }
+}
+
+.seccion-medicos {
+  min-height: 100vh;
+  padding: 35px 6%;
+  background: #f5f8fc;
+  color: #26364a;
+}
+
+.encabezado-medicos {
+  max-width: 1100px;
+  margin: 0 auto 35px;
+}
+
+.boton-volver {
+  border: none;
+  background: transparent;
+  color: #2878b8;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 28px;
+}
+
+.boton-volver:hover {
+  color: #155b91;
+}
+
+.encabezado-medicos h1 {
+  margin: 8px 0;
+  font-size: 34px;
+  font-weight: 750;
+  color: #173653;
+}
+
+.encabezado-medicos > p:last-child {
+  color: #718096;
+  font-size: 15px;
+}
+
+.etiqueta-inicio {
+  color: #2784bd;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.lista-medicos {
+  max-width: 1100px;
+  margin: 0 auto 45px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 22px;
+}
+
+.tarjeta-medico {
+  background: #ffffff;
+  border: 1px solid #e5edf5;
+  border-radius: 16px;
+  padding: 25px;
+  box-shadow: 0 5px 18px rgba(34, 75, 110, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tarjeta-medico:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(34, 75, 110, 0.11);
+}
+
+.icono-medico {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8f3fc;
+  color: #287fba;
+  border-radius: 14px;
+  margin-bottom: 18px;
+}
+
+.icono-medico .material-symbols-outlined {
+  font-size: 29px;
+}
+
+.tarjeta-medico h2 {
+  color: #203c58;
+  font-size: 18px;
+  margin: 0 0 10px;
+}
+
+.tarjeta-medico p {
+  color: #718096;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.tarjeta-medico .especialidad-medico {
+  color: #2784bd;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.tarjeta-medico button {
+  width: 100%;
+  margin-top: 18px;
+  padding: 11px;
+  border: 1px solid #287fba;
+  border-radius: 9px;
+  background: white;
+  color: #287fba;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.tarjeta-medico button:hover {
+  background: #287fba;
+  color: white;
+}
+
+.formulario-agendar {
+  max-width: 850px;
+  margin: 0 auto 40px;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid #e4edf5;
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(34, 75, 110, 0.07);
+}
+
+.encabezado-formulario {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 24px;
+  margin-bottom: 25px;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.encabezado-formulario > .material-symbols-outlined {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8f3fc;
+  color: #287fba;
+  border-radius: 14px;
+  font-size: 29px;
+}
+
+.encabezado-formulario h2 {
+  margin: 0 0 6px;
+  color: #173653;
+  font-size: 22px;
+}
+
+.encabezado-formulario p {
+  margin: 0;
+  color: #8492a3;
+  font-size: 13px;
+}
+
+.formulario-agendar form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.campo-cita {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.campo-cita:first-child,
+.campo-cita:last-of-type {
+  grid-column: 1 / -1;
+}
+
+.campo-cita label {
+  color: #354b62;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.campo-cita input,
+.campo-cita select,
+.campo-cita textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 14px;
+  border: 1px solid #dce5ee;
+  border-radius: 9px;
+  background: #fbfdff;
+  color: #34495e;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.campo-cita input,
+.campo-cita select {
+  min-height: 46px;
+}
+
+.campo-cita textarea {
+  resize: vertical;
+  min-height: 105px;
+}
+
+.campo-cita input:focus,
+.campo-cita select:focus,
+.campo-cita textarea:focus {
+  border-color: #328ac2;
+  box-shadow: 0 0 0 3px rgba(50, 138, 194, 0.12);
+}
+
+.campo-cita input::placeholder,
+.campo-cita textarea::placeholder {
+  color: #a3afbd;
+}
+
+.boton-agendar {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 49px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  border: none;
+  border-radius: 10px;
+  background: #287fba;
+  color: white;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.boton-agendar:hover:not(:disabled) {
+  background: #19699f;
+  transform: translateY(-1px);
+}
+
+.boton-agendar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mensaje-exito {
+  grid-column: 1 / -1;
+  padding: 13px 15px;
+  border-radius: 9px;
+  background: #e8f7ef;
+  color: #247447;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.error-medicos {
+  padding: 13px 15px;
+  border-radius: 9px;
+  background: #fff0f0;
+  color: #b83232;
+  font-size: 14px;
+}
+
+@media (max-width: 650px) {
+  .seccion-medicos {
+    padding: 25px 5%;
+  }
+
+  .encabezado-medicos h1 {
+    font-size: 27px;
+  }
+
+  .formulario-agendar {
+    padding: 22px 17px;
+  }
+
+  .formulario-agendar form {
+    grid-template-columns: 1fr;
+  }
+
+  .campo-cita:first-child,
+  .campo-cita:last-of-type {
+    grid-column: auto;
+  }
+
+  .encabezado-formulario h2 {
+    font-size: 19px;
+  }
+}
+
+.seccion-medicos {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.seccion-medicos .lista-medicos {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 45px;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  align-items: stretch;
+}
+
+.seccion-medicos .tarjeta-medico {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.seccion-medicos .formulario-agendar {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto 40px;
+  box-sizing: border-box;
+}
+
+.seccion-medicos .formulario-agendar form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.seccion-medicos .campo-cita:first-child,
+.seccion-medicos .campo-cita:last-of-type,
+.seccion-medicos .boton-agendar,
+.seccion-medicos .mensaje-exito,
+.seccion-medicos .error-medicos {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 850px) {
+  .seccion-medicos .lista-medicos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .seccion-medicos .lista-medicos {
+    grid-template-columns: 1fr;
+  }
+
+  .seccion-medicos .formulario-agendar form {
+    grid-template-columns: 1fr;
+  }
+
+  .seccion-medicos .campo-cita,
+  .seccion-medicos .campo-cita:first-child,
+  .seccion-medicos .campo-cita:last-of-type {
+    grid-column: 1;
+  }
+}
+
+.seccion-medicos {
+  width: 100%;
+  min-height: 100vh;
+  padding: 40px 5%;
+  box-sizing: border-box;
+}
+
+.seccion-medicos .encabezado-medicos {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 35px;
+}
+
+.seccion-medicos .lista-medicos {
+  display: grid !important;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 45px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 24px;
+}
+
+.seccion-medicos .tarjeta-medico {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.seccion-medicos .formulario-agendar {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 40px;
+}
+
+.seccion-medicos .formulario-agendar form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 22px;
+}
+
+.seccion-medicos .campo-cita:first-child,
+.seccion-medicos .campo-cita:last-of-type,
+.seccion-medicos .boton-agendar {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .seccion-medicos .lista-medicos {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .seccion-medicos {
+    padding: 25px 5%;
+  }
+
+  .seccion-medicos .lista-medicos {
+    grid-template-columns: 1fr !important;
+  }
+
+  .seccion-medicos .formulario-agendar form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .seccion-medicos .campo-cita {
+    grid-column: 1 !important;
+  }
+}
+
+.panel-administrador {
+  width: 100%;
+  max-width: 1250px;
+  margin: 0 auto;
+  padding: 45px 35px;
+  position: relative;
+  z-index: 1;
+}
+
+.encabezado-admin {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 35px;
+}
+
+.encabezado-admin h1 {
+  color: #173b4d;
+  font-size: 32px;
+  margin: 8px 0;
+  font-weight: 800;
+}
+
+.encabezado-admin p {
+  color: #718096;
+  margin: 0;
+}
+
+.bienvenida-admin {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 25px;
+  margin-bottom: 35px;
+  border-radius: 18px;
+  background: linear-gradient(120deg, #e5f5f2, #eef5fc);
+  border: 1px solid #d7eae7;
+}
+
+.bienvenida-admin > span {
+  font-size: 42px;
+  color: #168b80;
+}
+
+.bienvenida-admin h2 {
+  color: #173b4d;
+  margin: 0 0 7px;
+  font-size: 21px;
+}
+
+.bienvenida-admin p {
+  color: #64748b;
+  margin: 0;
+}
+
+.opciones-admin {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.opcion-admin {
+  min-height: 190px;
+  padding: 25px;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.opcion-admin:hover {
+  transform: translateY(-5px);
+  border-color: #8acdc3;
+  box-shadow: 0 12px 28px rgba(23, 59, 77, 0.10);
+}
+
+.opcion-admin > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 15px;
+  border-radius: 14px;
+  background: #e5f5f2;
+  color: #168b80;
+  font-size: 29px;
+}
+
+.opcion-admin h3 {
+  color: #173b4d;
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+
+.opcion-admin p {
+  color: #718096;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .opciones-admin {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .panel-administrador {
+    padding: 25px 16px;
+  }
+
+  .encabezado-admin {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .encabezado-admin h1 {
+    font-size: 25px;
+  }
+
+  .opciones-admin {
+    grid-template-columns: 1fr;
+  }
+
+  .bienvenida-admin {
+    align-items: flex-start;
+    padding: 18px;
+  }
+}
+
+.dias-horario {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.dias-horario label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dce5e7;
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.dias-horario input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: #168b83;
+  cursor: pointer;
+}
+
+.dias-horario label:has(input:checked) {
+  border-color: #168b83;
+  background: #eaf7f5;
+}
+
+.formulario-agendar h2,
+.lista-medicos h2 {
+  margin-bottom: 18px;
+}
+
+.lista-medicos .tarjeta-medico {
+  margin-bottom: 15px;
+}
+
+@media (max-width: 600px) {
+  .dias-horario {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.formulario-edicion-horario {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid #dce5e7;
+  border-radius: 12px;
+  background: #f8fbfb;
+}
+
+.formulario-edicion-horario h4 {
+  margin: 0 0 14px;
+}
+
+.acciones-horario {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* =====================================
+   GESTIÓN DE PACIENTES - MEDICITAS
+===================================== */
+
+.contenedor-principal {
+  width: 100%;
+  max-width: 1250px;
+  margin: 0 auto;
+  padding: 45px 35px;
+  position: relative;
+  z-index: 1;
+  color: #173b4d;
+}
+
+.encabezado-seccion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.encabezado-seccion h1 {
+  color: #173b4d;
+  font-size: 32px;
+  font-weight: 800;
+  margin: 0 0 8px;
+}
+
+.encabezado-seccion p {
+  color: #718096;
+  margin: 0;
+}
+
+.encabezado-seccion button,
+.acciones-pacientes button,
+.formulario-paciente button {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 20px;
+  background: #176b68;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.encabezado-seccion button:hover,
+.acciones-pacientes button:hover,
+.formulario-paciente button:hover {
+  background: #125451;
+  transform: translateY(-2px);
+}
+
+.acciones-pacientes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 22px;
+  margin-bottom: 25px;
+  background: #ffffff;
+  border: 1px solid #e3eceb;
+  border-radius: 16px;
+  box-shadow: 0 5px 18px rgba(23, 59, 77, 0.06);
+}
+
+.acciones-pacientes input {
+  flex: 1;
+  min-width: 220px;
+  padding: 12px 15px;
+  border: 1px solid #d7e2e5;
+  border-radius: 10px;
+  outline: none;
+  color: #173b4d;
+  background: #fbfdfd;
+  font-size: 14px;
+}
+
+.acciones-pacientes input:focus,
+.formulario-paciente input:focus {
+  border-color: #399b91;
+  box-shadow: 0 0 0 3px rgba(57, 155, 145, 0.12);
+}
+
+.acciones-pacientes button:disabled,
+.formulario-paciente button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.formulario-paciente {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+  padding: 25px;
+  margin-bottom: 25px;
+  background: linear-gradient(135deg, #ffffff, #f3faf8);
+  border: 1px solid #dcece8;
+  border-radius: 18px;
+  box-shadow: 0 5px 18px rgba(23, 59, 77, 0.06);
+}
+
+.formulario-paciente h2 {
+  grid-column: 1 / -1;
+  margin: 0 0 8px;
+  color: #173b4d;
+  font-size: 21px;
+}
+
+.formulario-paciente input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 15px;
+  border: 1px solid #d7e2e5;
+  border-radius: 10px;
+  outline: none;
+  background: #ffffff;
+  color: #173b4d;
+  font-size: 14px;
+}
+
+.formulario-paciente button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 180px;
+}
+
+.tabla-pacientes {
+  padding: 25px;
+  background: #ffffff;
+  border: 1px solid #e3eceb;
+  border-radius: 18px;
+  box-shadow: 0 5px 18px rgba(23, 59, 77, 0.06);
+  overflow-x: auto;
+}
+
+.tabla-pacientes h2 {
+  margin: 0 0 22px;
+  color: #173b4d;
+  font-size: 21px;
+}
+
+.tabla-pacientes table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 650px;
+}
+
+.tabla-pacientes th {
+  padding: 15px;
+  text-align: left;
+  background: #eaf5f3;
+  color: #176b68;
+  font-size: 13px;
+  font-weight: 800;
+  border-bottom: 1px solid #dcece8;
+}
+
+.tabla-pacientes td {
+  padding: 15px;
+  color: #526777;
+  font-size: 14px;
+  border-bottom: 1px solid #edf1f2;
+}
+
+.tabla-pacientes tbody tr:hover {
+  background: #f6fbfa;
+}
+
+.tabla-pacientes tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.mensaje-exito,
+.mensaje-error {
+  padding: 13px 16px;
+  margin: 0 0 18px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.mensaje-exito {
+  color: #176b54;
+  background: #e7f7ef;
+  border: 1px solid #c8ead8;
+}
+
+.mensaje-error {
+  color: #a83232;
+  background: #fff0f0;
+  border: 1px solid #f4d0d0;
+}
+
+/* Adaptación a celulares y pantallas pequeñas */
+@media (max-width: 700px) {
+  .contenedor-principal {
+    padding: 25px 16px;
+  }
+
+  .encabezado-seccion {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .encabezado-seccion h1 {
+    font-size: 26px;
+  }
+
+  .acciones-pacientes {
+    flex-direction: column;
+  }
+
+  .acciones-pacientes input,
+  .acciones-pacientes button {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .formulario-paciente {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .formulario-paciente h2,
+  .formulario-paciente button {
+    grid-column: 1;
+  }
+
+  .tabla-pacientes {
+    padding: 18px;
+  }
+}
+
+.seccion-citas {
+  width: 100%;
+  max-width: 1250px;
+  margin: 0 auto;
+  padding: 45px 35px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+.encabezado-citas {
+  margin-bottom: 30px;
+}
+
+.encabezado-citas .boton-volver {
+  margin-bottom: 25px;
+}
+
+.encabezado-citas h1 {
+  color: #173b4d;
+  font-size: 32px;
+  font-weight: 800;
+  margin: 8px 0;
+}
+
+.encabezado-citas > p:last-child {
+  color: #718096;
+  margin: 0;
+}
+
+.resumen-citas {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
+.resumen-cita {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e3eceb;
+  border-radius: 16px;
+  box-shadow: 0 5px 18px rgba(23, 59, 77, 0.05);
+}
+
+.resumen-cita > span {
+  font-size: 30px;
+  color: #25877f;
+  background: #e8f5f2;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.resumen-cita strong {
+  color: #173b4d;
+  font-size: 25px;
+}
+
+.resumen-cita p {
+  margin: 3px 0 0;
+  color: #718096;
+  font-size: 13px;
+}
+
+.lista-citas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.tarjeta-cita {
+  padding: 23px;
+  background: #fff;
+  border: 1px solid #e3eceb;
+  border-radius: 17px;
+  box-shadow: 0 5px 18px rgba(23, 59, 77, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tarjeta-cita:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 9px 24px rgba(23, 59, 77, 0.09);
+}
+
+.tarjeta-cita-superior {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #edf1f2;
+}
+
+.icono-cita {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #176b68;
+  background: #e8f5f2;
+  border-radius: 13px;
+}
+
+.icono-cita span {
+  font-size: 27px;
+}
+
+.informacion-cita {
+  flex: 1;
+  min-width: 0;
+}
+
+.informacion-cita h2 {
+  margin: 0 0 5px;
+  color: #173b4d;
+  font-size: 18px;
+}
+
+.informacion-cita p {
+  margin: 0;
+  color: #718096;
+  font-size: 13px;
+}
+
+.estado-cita {
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  background: #fff3df;
+  color: #a96508;
+}
+
+.estado-pendiente {
+  background: #fff3df;
+  color: #a96508;
+}
+
+.estado-confirmada {
+  background: #e3f6eb;
+  color: #187548;
+}
+
+.estado-cancelada {
+  background: #fdeaea;
+  color: #bd3737;
+}
+
+.detalles-cita {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding-top: 20px;
+}
+
+.detalles-cita > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.detalles-cita > div > span {
+  color: #399b91;
+  font-size: 21px;
+}
+
+.detalles-cita p {
+  margin: 0;
+  color: #526777;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.detalles-cita strong {
+  display: block;
+  color: #173b4d;
+  margin-bottom: 3px;
+}
+
+.estado-citas {
+  grid-column: 1 / -1;
+  padding: 35px;
+  text-align: center;
+  color: #718096;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e3eceb;
+}
+
+/* BOTONES DEL MÓDULO DE CITAS */
+
+.seccion-citas button {
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+/* Botón volver */
+.seccion-citas .boton-volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  color: #173b4d;
+  background: #ffffff;
+  border: 1px solid #dce7e9;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.seccion-citas .boton-volver:hover {
+  background: #edf6f5;
+  border-color: #25877f;
+}
+
+/* Botón registrar cita */
+.seccion-citas .boton-registrar-cita {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 13px 22px;
+  color: #ffffff;
+  background: #25877f;
+  border: none;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(37, 135, 127, 0.20);
+}
+
+.seccion-citas .boton-registrar-cita:hover {
+  background: #176b68;
+  transform: translateY(-2px);
+  box-shadow: 0 7px 16px rgba(37, 135, 127, 0.25);
+}
+
+/* Estados de los botones */
+.seccion-citas button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Adaptación a pantallas pequeñas */
+@media (max-width: 650px) {
+  .resumen-citas,
+  .lista-citas {
+    grid-template-columns: 1fr;
+  }
+
+  .seccion-citas {
+    padding: 25px 16px;
+  }
+
+  .detalles-cita {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* BOTONES DEL FORMULARIO DE CITAS */
+
+.seccion-citas .boton-cancelar-cita,
+.seccion-citas .boton-guardar-cita {
+  min-width: 125px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Cancelar */
+.seccion-citas .boton-cancelar-cita {
+  color: #526777;
+  background: #ffffff;
+  border: 1px solid #dce5eb;
+}
+
+.seccion-citas .boton-cancelar-cita:hover {
+  background: #f1f5f7;
+  border-color: #aabac3;
+}
+
+/* Guardar cita */
+.seccion-citas .boton-guardar-cita {
+  color: #ffffff;
+  background: #25877f;
+  border: 1px solid #25877f;
+  box-shadow: 0 4px 10px rgba(37, 135, 127, 0.18);
+}
+
+.seccion-citas .boton-guardar-cita:hover {
+  background: #176b68;
+  border-color: #176b68;
+  transform: translateY(-2px);
+}
+
+.seccion-citas .boton-guardar-cita:disabled {
+  background: #9bbdb9;
+  border-color: #9bbdb9;
+  box-shadow: none;
+}
+
+@media (max-width: 800px) {
+  .seccion-citas {
+    padding: 25px 16px;
+  }
+
+  .lista-citas {
+    grid-template-columns: 1fr;
+  }
+
+  .resumen-citas {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .tarjeta-cita-superior {
+    flex-wrap: wrap;
+  }
+
+  .estado-cita {
+    margin-left: auto;
+  }
+
+  .detalles-cita {
+    grid-template-columns: 1fr;
+  }
+
+  .encabezado-citas h1 {
+    font-size: 26px;
+  }
+}
+/* Botón para registrar una nueva cita */
+.boton-nueva-cita {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 13px 22px;
+  margin-top: 18px;
+  background: #0f766e;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.18);
+  transition: all 0.2s ease;
+}
+
+.boton-nueva-cita:hover {
+  background: #115e59;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.25);
+}
+
+.boton-nueva-cita:active {
+  transform: translateY(0);
+}
+
+.boton-nueva-cita .material-symbols-outlined {
+  font-size: 21px;
+  line-height: 1;
+}
+/* BOTÓN CERRAR FORMULARIO DE CITAS */
+
+.seccion-citas .cerrar-formulario-cita {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #718096;
+  background: #f4f7f8;
+  border: 1px solid #e3eceb;
+  border-radius: 10px;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.seccion-citas .cerrar-formulario-cita:hover {
+  color: #bd3737;
+  background: #fdeaea;
+  border-color: #f5caca;
+  transform: rotate(90deg);
+}
+
+/* FORMULARIO DE REGISTRO DE CITAS */
+
+.seccion-citas .formulario-registro-cita {
+  width: 100%;
+  margin-bottom: 30px;
+  padding: 28px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #e3eceb;
+  border-radius: 18px;
+  box-shadow: 0 6px 22px rgba(23, 59, 77, 0.07);
+}
+
+/* ENCABEZADO DEL FORMULARIO */
+
+.seccion-citas .encabezado-formulario-cita {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 25px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #edf1f2;
+}
+
+.seccion-citas .encabezado-formulario-cita h2 {
+  margin: 0 0 7px;
+  color: #173b4d;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.seccion-citas .encabezado-formulario-cita p {
+  margin: 0;
+  color: #718096;
+  font-size: 14px;
+}
+
+/* DISTRIBUCIÓN DE LOS CAMPOS */
+
+.seccion-citas .campos-formulario-cita {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.seccion-citas .campo-cita {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.seccion-citas .campo-cita-completo {
+  grid-column: 1 / -1;
+}
+
+/* ETIQUETAS */
+
+.seccion-citas .campo-cita label {
+  color: #173b4d;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* CAMPOS DE ENTRADA */
+
+.seccion-citas .campo-cita input,
+.seccion-citas .campo-cita select,
+.seccion-citas .campo-cita textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  color: #334e5c;
+  background: #fbfdfd;
+  border: 1px solid #dce7e9;
+  border-radius: 10px;
+  outline: none;
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.seccion-citas .campo-cita textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.seccion-citas .campo-cita input:focus,
+.seccion-citas .campo-cita select:focus,
+.seccion-citas .campo-cita textarea:focus {
+  border-color: #25877f;
+  box-shadow: 0 0 0 3px rgba(37, 135, 127, 0.12);
+  background: #ffffff;
+}
+
+/* ACCIONES DEL FORMULARIO */
+
+.seccion-citas .acciones-formulario-cita {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #edf1f2;
+}
+
+/* MENSAJES */
+
+.seccion-citas .mensaje-error-cita,
+.seccion-citas .mensaje-exito-cita {
+  margin: 18px 0 0;
+  padding: 12px 15px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.seccion-citas .mensaje-error-cita {
+  color: #bd3737;
+  background: #fdeaea;
+  border: 1px solid #f5caca;
+}
+
+.seccion-citas .mensaje-exito-cita {
+  color: #187548;
+  background: #e3f6eb;
+  border: 1px solid #c6ead5;
+}
+
+/* DISEÑO RESPONSIVE */
+
+@media (max-width: 650px) {
+  .seccion-citas .formulario-registro-cita {
+    padding: 20px 16px;
+  }
+
+  .seccion-citas .campos-formulario-cita {
+    grid-template-columns: 1fr;
+  }
+
+  .seccion-citas .campo-cita-completo {
+    grid-column: auto;
+  }
+
+  .seccion-citas .acciones-formulario-cita {
+    flex-direction: column-reverse;
+  }
+
+  .seccion-citas .acciones-formulario-cita button {
+    width: 100%;
+  }
+}
+
+/* ACCIONES DE LAS TARJETAS DE CITAS */
+
+.seccion-citas .acciones-tarjeta-cita {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 17px;
+  border-top: 1px solid #edf1f2;
+}
+
+.seccion-citas .boton-confirmar-cita,
+.seccion-citas .boton-cancelar-cita-listado {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.seccion-citas .boton-confirmar-cita {
+  color: #187548;
+  background: #e3f6eb;
+  border: 1px solid #c6ead5;
+}
+
+.seccion-citas .boton-confirmar-cita:hover {
+  color: #ffffff;
+  background: #187548;
+  transform: translateY(-2px);
+}
+
+.seccion-citas .boton-cancelar-cita-listado {
+  color: #bd3737;
+  background: #fdeaea;
+  border: 1px solid #f5caca;
+}
+
+.seccion-citas .boton-cancelar-cita-listado:hover {
+  color: #ffffff;
+  background: #bd3737;
+  transform: translateY(-2px);
+}
+
+.seccion-citas .acciones-tarjeta-cita .material-symbols-outlined {
+  font-size: 18px;
 }
   </style>
