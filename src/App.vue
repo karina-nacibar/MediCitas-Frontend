@@ -107,7 +107,11 @@ const mensajeHorario = ref('')
 const errorHorario = ref('')
 
 const horarioEditando = ref(null)
-const guardandoEdicionHorario = ref(false)
+
+// Variables para la agenda personal del médico
+const miAgenda = ref([])
+const cargandoMiAgenda = ref(false)
+const errorMiAgenda = ref('')
 
 async function abrirHorariosAdmin() {
   vistaActual.value = 'horarios-admin'
@@ -145,11 +149,39 @@ async function cargarHorariosMedico() {
       error.response?.data?.mensaje ||
       'No fue posible cargar los horarios del médico.'
 
-  } finally {
+    } finally {
     cargandoHorarios.value = false
   }
 }
 
+// CARGAR LA AGENDA PERSONAL DEL MÉDICO
+async function cargarMiAgenda() {
+  cargandoMiAgenda.value = true
+  errorMiAgenda.value = ''
+  miAgenda.value = []
+
+  try {
+    const respuesta = await api.get('/medico/mi-agenda')
+
+    console.log('RESPUESTA COMPLETA:', respuesta)
+    console.log('DATOS RECIBIDOS:', respuesta.data)
+
+    miAgenda.value = respuesta.data
+
+    console.log('MI AGENDA GUARDADA:', miAgenda.value)
+    console.log('CANTIDAD DE HORARIOS:', miAgenda.value.length)
+
+  } catch (error) {
+    console.error('Error al cargar mi agenda:', error)
+
+    errorMiAgenda.value =
+      error.response?.data?.mensaje ||
+      'No fue posible consultar tu agenda médica.'
+
+  } finally {
+    cargandoMiAgenda.value = false
+  }
+}
 async function registrarHorario() {
   const idMedico = nuevoHorario.value.id_medico
 
@@ -2534,15 +2566,110 @@ const agendarCita = async () => {
   </div>
 </section>
 
-<section v-if="vistaActual === 'perfil'" class="seccion-medicos">
+<!-- AGENDA PERSONAL DEL MÉDICO -->
+<section
+  v-if="vistaActual === 'mi-agenda'"
+  class="seccion-medicos"
+>
   <header class="encabezado-medicos">
     <button
       type="button"
       class="boton-volver"
-      @click="vistaActual = 'inicio'"
+      @click="vistaActual = 'medico'"
     >
-      ← Volver al inicio
+      ← Volver al panel profesional
     </button>
+
+    <div>
+      <p class="etiqueta-inicio">AGENDA PROFESIONAL</p>
+      <h1>Mi agenda</h1>
+      <p>
+        Consulta tus horarios de atención y disponibilidad médica.
+      </p>
+    </div>
+  </header>
+
+  <div v-if="cargandoMiAgenda" class="mensaje-carga">
+    Consultando tus horarios...
+  </div>
+
+  <div v-else-if="errorMiAgenda" class="mensaje-error">
+    {{ errorMiAgenda }}
+    <button type="button" @click="cargarMiAgenda">
+      Reintentar
+    </button>
+  </div>
+
+  <div v-else-if="miAgenda.length === 0" class="mensaje-vacio">
+    <span class="material-symbols-outlined">event_busy</span>
+    <h2>No tienes horarios registrados</h2>
+    <p>
+      Actualmente no hay disponibilidad médica asociada a tu cuenta.
+      Comunícate con el administrador para configurar tu agenda.
+    </p>
+  </div>
+
+  <div v-else class="lista-medicos">
+    <div class="encabezado-seccion">
+      <h2>Mis horarios de atención</h2>
+      <p>{{ miAgenda.length }} horarios registrados</p>
+    </div>
+
+    <article
+      v-for="horario in miAgenda"
+      :key="horario.id_horario"
+      class="tarjeta-medico"
+    >
+      <div class="contenido-medico">
+        <span class="material-symbols-outlined">
+          calendar_month
+        </span>
+
+        <div>
+          <h3>
+            {{
+              ['Lunes', 'Martes', 'Miércoles', 'Jueves',
+               'Viernes', 'Sábado', 'Domingo'][horario.dia_semana - 1]
+            }}
+          </h3>
+
+          <p>
+            {{ String(horario.hora_inicio).slice(0, 5) }}
+            -
+            {{ String(horario.hora_fin).slice(0, 5) }}
+          </p>
+
+          <p>
+            Duración de cada cita:
+            {{ horario.duracion_cita }} minutos
+          </p>
+        </div>
+      </div>
+
+      <span
+        :class="horario.activo ? 'estado-activo' : 'estado-inactivo'"
+      >
+        {{ horario.activo ? 'Disponible' : 'Inactivo' }}
+      </span>
+    </article>
+  </div>
+</section>
+
+<section v-if="vistaActual === 'perfil'" class="seccion-medicos">
+  <header class="encabezado-medicos">
+    <button
+  type="button"
+  class="boton-volver"
+  @click="vistaActual = usuarioActual?.rol === 'medico'
+    ? 'medico'
+    : usuarioActual?.rol === 'administrador'
+      ? 'administrador'
+      : usuarioActual?.rol === 'recepcionista'
+        ? 'recepcionista'
+        : 'inicio'"
+>
+  ← Volver al inicio
+</button>
 
     <p class="etiqueta-inicio">MI CUENTA</p>
     <h1>Mi perfil</h1>
@@ -2603,28 +2730,37 @@ const agendarCita = async () => {
   </header>
 
   <div class="opciones-admin">
-    <button
-      type="button"
-      class="opcion-admin"
-      @click="abrirSeccion('citas')"
-    >
-      <span class="material-symbols-outlined">calendar_month</span>
-      <h2>Mis citas</h2>
-      <p>Consulta las citas asignadas a tu agenda.</p>
-    </button>
+  <button
+    type="button"
+    class="opcion-admin"
+    @click="abrirSeccion('citas')"
+  >
+    <span class="material-symbols-outlined">calendar_month</span>
+    <h2>Mis citas</h2>
+    <p>Consulta las citas asignadas a tu agenda.</p>
+  </button>
 
-    <button
-      type="button"
-      class="opcion-admin"
-      @click="vistaActual = 'perfil'"
-    >
-      <span class="material-symbols-outlined">person</span>
-      <h2>Mi perfil</h2>
-      <p>Consulta tu información personal.</p>
-    </button>
-  </div>
+  <button
+  type="button"
+  class="opcion-admin"
+  @click="vistaActual = 'mi-agenda'; cargarMiAgenda()"
+>
+  <span class="material-symbols-outlined">event_available</span>
+  <h2>Mi agenda</h2>
+  <p>Consulta tus horarios y disponibilidad médica.</p>
+</button>
+
+  <button
+    type="button"
+    class="opcion-admin"
+    @click="vistaActual = 'perfil'"
+  >
+    <span class="material-symbols-outlined">person</span>
+    <h2>Mi perfil</h2>
+    <p>Consulta tu información personal.</p>
+  </button>
+</div>
 </section>
-
 
 <!-- PANEL ADMINISTRATIVO -->
 <section
