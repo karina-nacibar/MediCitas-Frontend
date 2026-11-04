@@ -1832,9 +1832,19 @@ const agendarCita = async () => {
 
   <!-- ENCABEZADO -->
   <header class="encabezado-medicos">
-    <button type="button" class="boton-volver" @click="vistaActual = 'inicio'">
-      ← Volver al inicio
-    </button>
+    <button
+  type="button"
+  class="boton-volver"
+  @click="vistaActual = usuarioActual?.rol === 'recepcionista'
+    ? 'recepcionista'
+    : usuarioActual?.rol === 'administrador'
+      ? 'administrador'
+      : usuarioActual?.rol === 'medico'
+        ? 'medico'
+        : 'inicio'"
+>
+  ← Volver al inicio
+</button>
 
     <p class="etiqueta-inicio">NUESTRO EQUIPO MÉDICO</p>
     <h1>Encuentra tu especialista</h1>
@@ -1879,7 +1889,10 @@ const agendarCita = async () => {
   <p v-else>No hay médicos registrados actualmente.</p>
 
   <!-- FORMULARIO PARA AGENDAR -->
-  <section class="formulario-agendar">
+  <section
+  v-if="usuarioActual?.rol === 'paciente'"
+  class="formulario-agendar"
+>
 
     <div class="encabezado-formulario">
       <span class="material-symbols-outlined">calendar_month</span>
