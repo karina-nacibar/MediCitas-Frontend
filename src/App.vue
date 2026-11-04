@@ -1879,6 +1879,7 @@ const agendarCita = async () => {
 
       <button
         type="button"
+        v-if="usuarioActual?.rol === 'paciente'"
         @click="nuevaCita.id_medico = String(medico.id_medico)"
       >
         Seleccionar médico
